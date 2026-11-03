@@ -38,7 +38,7 @@ describe("plan", () => {
       kind: "active",
       baseVersion: "7.0.1.1-SNAPSHOT",
       hotfix: true,
-      hotfixOf: "release/7.0.1",
+      hotfixOf: "release/7.0.1-SNAPSHOT",
       hotfixOfVersion: "7.0.1",
       deploymentDestination: "Spring Enterprise",
       frozenBranch: "embargoed/frozen/7.0.x",
@@ -72,7 +72,7 @@ describe("plan", () => {
       kind: "active",
       baseVersion: "7.1.0.1-SNAPSHOT",
       hotfix: true,
-      hotfixOf: "release/7.1.0",
+      hotfixOf: "release/7.1.0-SNAPSHOT",
       hotfixOfVersion: "7.1.0",
       snapshotBranch: "embargoed/7.1.0.1-SNAPSHOT",
     });
@@ -90,7 +90,7 @@ describe("plan", () => {
         refName: "embargoed/active/try-hotfix",
         version: "7.0.3-SNAPSHOT",
       }).hotfixOf,
-    ).toBe("release/7.0.3");
+    ).toBe("release/7.0.3-SNAPSHOT");
   });
 
   it("names the frozen embargoed branch of the same generation for an active one, whatever the generation is called", () => {
@@ -169,7 +169,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         kind: "active",
         "base-version": "7.0.1.1-SNAPSHOT",
         hotfix: "true",
-        "hotfix-of": "release/7.0.1",
+        "hotfix-of": "release/7.0.1-SNAPSHOT",
         "hotfix-of-version": "7.0.1",
         "deployment-destination": "Spring Enterprise",
         "frozen-branch": "embargoed/frozen/7.0.x",

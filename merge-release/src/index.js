@@ -8,9 +8,9 @@ const lines = (text) => (text ? text.split("\n") : []);
  * Merges the release that a hotfix fixes into the branch that is checked out, so that the
  * hotfix is based on the release: the release plus the fixes of the active embargoed branch.
  *
- * The merge is a merge commit (Merge release/7.0.1 into embargoed/7.0.1.1-SNAPSHOT), signed
+ * The merge is a merge commit (Merge release/7.0.1-SNAPSHOT into embargoed/7.0.1.1-SNAPSHOT), signed
  * off with the identity that git is set up with, even if the release could be fast forwarded
- * to. It is made from the branch of the remote (origin/release/7.0.1), as it was when the
+ * to. It is made from the branch of the remote (origin/release/7.0.1-SNAPSHOT), as it was when the
  * repository was checked out.
  *
  * - If the release does not exist (the frozen embargoed branch has not been pushed yet), it is a
@@ -26,7 +26,9 @@ const lines = (text) => (text ? text.split("\n") : []);
  */
 export function mergeRelease({ directory, release }) {
   if (!release) {
-    throw new Error("The input release is required, for example release/7.0.1");
+    throw new Error(
+      "The input release is required, for example release/7.0.1-SNAPSHOT",
+    );
   }
   requireIdentity(directory);
   const ref = `refs/remotes/origin/${release}`;

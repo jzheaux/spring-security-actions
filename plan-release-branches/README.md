@@ -11,7 +11,7 @@ A long-term support embargoed branch, `embargoed/lts/7.0.x` (`7.0.1-SNAPSHOT`), 
 | `kind` | `frozen` | `active` |
 | `base-version`, which the release version is worked out from | `7.0.1-SNAPSHOT` | `7.0.1.1-SNAPSHOT`, the hotfix |
 | `hotfix` | `false` | `true` |
-| `hotfix-of`, the release that the hotfix fixes | empty | `release/7.0.1` |
+| `hotfix-of`, the release that the hotfix fixes | empty | `release/7.0.1-SNAPSHOT` ||
 | `hotfix-of-version`, the version of that release | empty | `7.0.1` |
 | `deployment-destination`, where the release is deployed to | `Maven Central` | `Spring Enterprise` |
 | `frozen-branch`, the frozen embargoed branch of the same generation | empty | `embargoed/frozen/7.0.x` |

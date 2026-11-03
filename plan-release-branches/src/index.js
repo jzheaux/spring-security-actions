@@ -20,7 +20,7 @@ const HOTFIX = /^\d+\.\d+\.\d+\.\d+$/;
  *   hotfix            true for an active embargoed branch: a hotfix is built, and hotfix versions
  *                     of the dependencies are preferred
  *   hotfixOf          for a hotfix, the release branch that it fixes and is built on:
- *                     release/7.0.1 for 7.0.1-SNAPSHOT. Empty for a frozen embargoed branch
+ *                     release/7.0.1-SNAPSHOT for 7.0.1-SNAPSHOT. Empty for a frozen embargoed branch
  *   hotfixOfVersion   the version of that release: 7.0.1. Empty for a frozen embargoed branch
  *   deploymentDestination
  *                     where the release is deployed to, as the release train names it:
@@ -117,7 +117,7 @@ export function plan({ refName, version }) {
     kind,
     baseVersion: `${hotfix}-SNAPSHOT`,
     hotfix: true,
-    hotfixOf: `release/${plain}`,
+    hotfixOf: `release/${plain}-SNAPSHOT`,
     hotfixOfVersion: plain,
     deploymentDestination: "Spring Enterprise",
     frozenBranch: refName.replace(/^embargoed\/active\//, "embargoed/frozen/"),
