@@ -6,7 +6,7 @@ inputs:
     description: "The branches, as `branch=version`, one per line. The version is for the summary."
     required: true
   base:
-    description: "The commit that was pushed, to count the commits of the branches."
+    description: "The commit that was pushed. The branches were started at it, so what the run made on them is what comes after it, and the summary says how they were created from that."
     required: false
   remote:
     description: "The remote to push to."
@@ -32,6 +32,33 @@ inputs:
     required: false
   train-state-url:
     description: "The URL of the line of train.yml with that state. The state links to it."
+    required: false
+  kind:
+    description: "frozen, active or lts, the output kind of plan-release-branches. For active (a hotfix) the summary says how the merges of the branches that it is based on went."
+    required: false
+  oss-repository:
+    description: "The OSS repository (owner/repo), read from the server of the workflow, for example spring-projects/spring-security. The commits that it lacks are the ones that the summary lists. Leave it out to list the commits that the run made on the pushed commit instead."
+    required: false
+  oss-url:
+    description: "The address git fetches OSS from, if it is not the repository on the server. For a test."
+    required: false
+  oss-branch:
+    description: "The branch of the OSS repository that the generation is in (7.0.x), the output oss-branch of plan-release-branches. A frozen or long-term support branch is compared with it."
+    required: false
+  oss-tag:
+    description: "For a hotfix, the tag that OSS has once the release it fixes is public (7.0.9), the output oss-tag of plan-release-branches. Until there is one, the hotfix is compared with the branch it is based on."
+    required: false
+  snapshot-of:
+    description: "For a hotfix, the branch that its snapshot is based on (embargoed/7.0.9-INTERNAL-SNAPSHOT), the output hotfix-of-snapshot of plan-release-branches."
+    required: false
+  release-of:
+    description: "For a hotfix, the branch that its release is based on (release/7.0.9), the output hotfix-of-release of plan-release-branches."
+    required: false
+  merged-snapshot:
+    description: "The output merged of merge-release for the snapshot branch of a hotfix: true, false (there was no such branch) or up-to-date. The summary says so."
+    required: false
+  merged-release:
+    description: "The output merged of merge-release for the release branch of a hotfix: true, false (there was no such branch) or up-to-date. The summary says so."
     required: false
   path:
     description: "The directory of the git repository."

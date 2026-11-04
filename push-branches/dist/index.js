@@ -28624,12 +28624,11 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
-  pO: () => (/* binding */ branchCell),
+  rx: () => (/* binding */ introduction),
   iW: () => (/* binding */ main),
+  BE: () => (/* binding */ ossUrl),
   G: () => (/* binding */ parseBranches),
-  XB: () => (/* binding */ pushBranches),
-  hR: () => (/* binding */ trainLine),
-  zu: () => (/* binding */ versionCell)
+  XB: () => (/* binding */ pushBranches)
 });
 
 ;// CONCATENATED MODULE: external "os"
@@ -31475,7 +31474,7 @@ function core_error(message, properties = {}) {
  * @param properties optional properties to add to the annotation.
  */
 function warning(message, properties = {}) {
-    issueCommand('warning', toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+    command_issueCommand('warning', utils_toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 /**
  * Adds a notice issue
@@ -31628,7 +31627,7 @@ function requireIdentity(directory) {
  * (merge-base --is-ancestor says no with the exit code 1), or is to be handled (a merge).
  */
 function gitTry(directory, ...args) {
-  const result = spawnSync("git", args, { cwd: directory, encoding: "utf8" });
+  const result = (0,external_node_child_process_namespaceObject.spawnSync)("git", args, { cwd: directory, encoding: "utf8" });
   return {
     code: result.status ?? 1,
     stdout: (result.stdout ?? "").replace(/\n$/, ""),
@@ -31685,6 +31684,153 @@ async function execute(action) {
   }
 }
 
+;// CONCATENATED MODULE: ./src/commits.js
+
+
+const FIELD = "\x1f";
+const RECORD = "\x1e";
+const FORMAT = `%H${FIELD}%P${FIELD}%s${FIELD}%b${RECORD}`;
+
+/** The commits that git log printed in the format above, as { sha, parents, subject, body }. */
+function parse(text) {
+  return text
+    .split(RECORD)
+    .map((record) => record.replace(/^\n+/, ""))
+    .filter((record) => record.trim() !== "")
+    .map((record) => {
+      const [sha, parents, subject, body] = record.split(FIELD);
+      return {
+        sha,
+        parents: parents ? parents.split(" ") : [],
+        subject,
+        body: (body ?? "").trim(),
+      };
+    });
+}
+
+/**
+ * The commits of `to` that `from` does not have (git log from..to), the oldest first, without
+ * the merge commits: the ones that are shown, and that the commands of the summary list.
+ */
+function commitsNotIn(directory, from, to) {
+  return parse(
+    git(
+      directory,
+      "log",
+      "--no-merges",
+      "--reverse",
+      `--format=${FORMAT}`,
+      `${from}..${to}`,
+    ),
+  );
+}
+
+/**
+ * The commits that were made on a branch after a commit, in the order that they were made,
+ * merge commits too: the first parent of each is the one before it, which is how a branch
+ * that was started at the pushed commit, and merged into, is read.
+ */
+function commitsMadeAfter(directory, from, to) {
+  return parse(
+    git(
+      directory,
+      "log",
+      "--first-parent",
+      "--reverse",
+      `--format=${FORMAT}`,
+      `${from}..${to}`,
+    ),
+  );
+}
+
+/** How many commits `to` has that `from` does not, with or without the merge commits. */
+function countCommits(directory, from, to, { merges }) {
+  return Number(
+    git(
+      directory,
+      "rev-list",
+      "--count",
+      ...(merges ? [] : ["--no-merges"]),
+      `${from}..${to}`,
+    ),
+  );
+}
+
+/** The commit that a ref points to, or undefined if there is no such ref. */
+function resolve(directory, ref) {
+  const result = gitTry(
+    directory,
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `${ref}^{commit}`,
+  );
+  return result.code === 0 ? result.stdout : undefined;
+}
+
+;// CONCATENATED MODULE: ./src/oss.js
+
+
+
+/**
+ * Reads what the summary compares the branches with from the OSS repository, which is public:
+ * its tags, and, for a frozen or a long-term support branch, the branch of the generation.
+ * They are fetched into refs of their own (refs/oss-tags/*, refs/remotes/oss/<branch>), so a
+ * tag of the repository that is checked out is never replaced.
+ *
+ * It never throws: the summary is not worth a failed release. If OSS cannot be read, `error`
+ * says why, and the summary compares the branches with something else and says so.
+ *
+ * It returns { url, branchRef, tagRef, error }: the refs are the ones that exist. A branch or a
+ * tag that OSS does not have is not an error: it is no ref.
+ */
+function fetchOss({ directory, url, branch, tag }) {
+  if (!url) {
+    return {};
+  }
+  const said = (result) =>
+    result.stderr.split("\n").filter(Boolean).at(-1) || "git fetch failed";
+  // the tags first, apart from the branch: a generation that OSS has no branch for yet must
+  // not cost the tags
+  const tags = gitTry(
+    directory,
+    "fetch",
+    "--quiet",
+    "--no-tags",
+    url,
+    "+refs/tags/*:refs/oss-tags/*",
+  );
+  if (tags.code !== 0) {
+    return { url, error: said(tags) };
+  }
+  let branchRef;
+  if (branch) {
+    const fetched = gitTry(
+      directory,
+      "fetch",
+      "--quiet",
+      "--no-tags",
+      url,
+      `+refs/heads/${branch}:refs/remotes/oss/${branch}`,
+    );
+    if (fetched.code === 0) {
+      branchRef = resolve(directory, `refs/remotes/oss/${branch}`)
+        ? `refs/remotes/oss/${branch}`
+        : undefined;
+    } else if (!/couldn't find remote ref/.test(fetched.stderr)) {
+      return { url, error: said(fetched) };
+    }
+  }
+  return {
+    url,
+    branchRef,
+    tagRef:
+      tag && resolve(directory, `refs/oss-tags/${tag}`)
+        ? `refs/oss-tags/${tag}`
+        : undefined,
+  };
+}
+
 ;// CONCATENATED MODULE: ./src/summary.js
 
 
@@ -31710,55 +31856,36 @@ function table(header, rows) {
   );
 }
 
-;// CONCATENATED MODULE: ./src/index.js
-
-
-
-
-
 /**
- * The branches to push from the lines of the input: branch=version, one per line, where the
- * version is what the summary says the branch has.
+ * The text as it is shown, in markdown: the characters that mean something (a link, a code
+ * span, emphasis, a table cell, a tag) are escaped. The subject of a commit is the text of
+ * somebody else.
  */
-function parseBranches(text) {
-  const branches = (text ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const at = line.lastIndexOf("=");
-      if (at <= 0 || at === line.length - 1) {
-        throw new Error(`"${line}" is not branch=version`);
-      }
-      return { branch: line.slice(0, at), version: line.slice(at + 1) };
-    });
-  if (branches.length === 0) {
-    throw new Error(
-      "The input branches is required: branch=version, one per line",
-    );
-  }
-  return branches;
+function escapeMarkdown(text) {
+  return String(text).replace(/([\\`*_[\]<>|])/g, "\\$1");
 }
 
 /**
- * Pushes the branches at once, or none (git push --atomic), so that a failure never leaves
- * one of them built and the others not. It is forced, because the branches are built
- * again from the pushed commit every time. It returns, for every branch, how many commits
- * it has on the pushed commit.
+ * The address of the repository that runs the workflow (GITHUB_SERVER_URL, GITHUB_REPOSITORY),
+ * without a slash at the end. Undefined when it is not known, run locally for example: the
+ * summary then has no links.
  */
-function pushBranches({ directory, remote = "origin", branches, base }) {
-  const counts = branches.map(({ branch }) =>
-    Number(git(directory, "rev-list", "--count", `${base}..${branch}`)),
-  );
-  git(
-    directory,
-    "push",
-    "--atomic",
-    "--force",
-    remote,
-    ...branches.map((b) => b.branch),
-  );
-  return branches.map((b, i) => ({ ...b, commits: counts[i] }));
+function repositoryUrl() {
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!repository) {
+    return undefined;
+  }
+  const server = (
+    process.env.GITHUB_SERVER_URL || "https://github.com"
+  ).replace(/\/+$/, "");
+  return `${server}/${repository}`;
+}
+
+/** A sha as a short code, linked to its commit when the repository is known. */
+function commitLink(sha) {
+  const short = `\`${sha.slice(0, 7)}\``;
+  const repository = repositoryUrl();
+  return repository ? `[${short}](${repository}/commit/${sha})` : short;
 }
 
 /**
@@ -31814,14 +31941,552 @@ function trainLine(train, trainUrl, status, state, stateUrl) {
   return [where ? `${text}: ${where}` : text, ""];
 }
 
+;// CONCATENATED MODULE: ./src/steps.js
+
+
+/**
+ * The subjects of the commits that the actions of this repository make. The workflow gives
+ * three of them (the license, the version, the release), update-versions makes the others,
+ * and merge-release makes the merge. A test checks that the actions still make them, so the
+ * summary cannot read a commit wrong after one of them was changed.
+ */
+const SUBJECTS = {
+  merge: /^Merge (\S+) into (\S+)$/,
+  license: /^Commercial changes for (\S+)$/,
+  version: /^Set the version to (\S+)$/,
+  release: /^Release (\S+)$/,
+  dependency: /^Update (\S+) to (\S+)$/,
+};
+
+const issueOf = (commit) => /Closes gh-(\d+)/.exec(commit.body)?.[1];
+
+/**
+ * What the run did to build a branch, one sentence for each step, in the order that it did
+ * it. It is read from the commits that were made on the branch after the pushed commit, so it
+ * says what is really there, and from what the run knows of the steps that left no commit (a
+ * merge that was skipped).
+ *
+ *   role      release or snapshot
+ *   kind      frozen, active or lts
+ *   commits   the commits made after the pushed commit, in order (commitsMadeAfter)
+ *   merged    for a hotfix, what merge-release said for this branch: true, false, up-to-date
+ *   basedOn   for a hotfix, the branch that this one is based on
+ *   train     the name of the release train, if there was one
+ *   link      a sha as a link to its commit
+ */
+function describeSteps({
+  role,
+  kind,
+  base,
+  refName,
+  commits,
+  merged,
+  basedOn,
+  train,
+  link,
+}) {
+  const steps = [
+    `Started from the pushed commit ${link(base)}${refName ? ` of \`${refName}\`` : ""}.`,
+  ];
+  const hotfix = kind === "active";
+  if (hotfix && merged === "false") {
+    steps.push(
+      `Skipped the merge: \`${basedOn}\` does not exist, so the hotfix ${role === "release" ? "release" : "snapshot"} is built from the active embargoed branch alone.`,
+    );
+  } else if (hotfix && merged === "up-to-date") {
+    steps.push(`Merged nothing: \`${basedOn}\` is in the branch already.`);
+  }
+  for (let i = 0; i < commits.length; i++) {
+    const commit = commits[i];
+    const merge = SUBJECTS.merge.exec(commit.subject);
+    const license = SUBJECTS.license.exec(commit.subject);
+    const version =
+      SUBJECTS.version.exec(commit.subject) ??
+      SUBJECTS.release.exec(commit.subject);
+    if (merge) {
+      steps.push(
+        `Merged \`${merge[1]}\` into it (${link(commit.sha)})${
+          hotfix ? `: the hotfix ${role} is the ${role} plus the fixes` : ""
+        }.`,
+      );
+    } else if (license) {
+      steps.push(`Applied the commercial license (${link(commit.sha)}).`);
+    } else if (version) {
+      steps.push(`Set the version to \`${version[1]}\` (${link(commit.sha)}).`);
+    } else if (SUBJECTS.dependency.test(commit.subject)) {
+      const group = [commit];
+      while (
+        i + 1 < commits.length &&
+        SUBJECTS.dependency.test(commits[i + 1].subject)
+      ) {
+        group.push(commits[++i]);
+      }
+      steps.push(dependencies(group, train, link));
+    } else {
+      steps.push(`${link(commit.sha)} ${escapeMarkdown(commit.subject)}`);
+    }
+  }
+  return steps;
+}
+
+/** The step of a group of dependency updates, each with its commit and its issue. */
+function dependencies(group, train, link) {
+  const updates = group.map((commit) => {
+    const [, name, version] = SUBJECTS.dependency.exec(commit.subject);
+    return { commit, name, version, issue: issueOf(commit) };
+  });
+  const snapshots = updates.every(({ version }) =>
+    version.endsWith("SNAPSHOT"),
+  );
+  const issues = updates.every(({ issue }) => issue);
+  const none = updates.every(({ issue }) => !issue);
+  const what = `${updates.length} ${updates.length === 1 ? "dependency" : "dependencies"}`;
+  const items = updates
+    .map(
+      ({ commit, name, version, issue }) =>
+        `${link(commit.sha)} (${escapeMarkdown(name)} ${escapeMarkdown(version)}${issue ? `, Closes gh-${issue}` : ""})`,
+    )
+    .join(", ");
+  const from = train ? ` from train ${train}` : "";
+  const issue = issues
+    ? updates.length === 1
+      ? ", with its issue"
+      : ", each with its issue"
+    : none
+      ? ", with no issue"
+      : "";
+  return `Updated ${what}${snapshots ? " to snapshots" : ""}${from}${issue}: ${items}.`;
+}
+
+;// CONCATENATED MODULE: ./src/versions.js
+// A version of a release: 7.0.9, 7.0.9.1 (a hotfix), 7.2.0-M1 or 7.2.0-RC1.
+const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(?:-(M|RC)(\d+))?$/;
+
+// A milestone comes before a release candidate, which comes before the release.
+const STAGE = { M: 0, RC: 1 };
+const RELEASE = 2;
+
+/**
+ * The parts of a version that decide its order, or undefined if it is not the version of a
+ * release (a snapshot, a branch that is not a release).
+ */
+function parseVersion(text) {
+  const match = VERSION.exec(text ?? "");
+  if (!match) {
+    return undefined;
+  }
+  const [, major, minor, patch, hotfix, stage, number] = match;
+  return [
+    Number(major),
+    Number(minor),
+    Number(patch),
+    Number(hotfix ?? 0),
+    stage ? STAGE[stage] : RELEASE,
+    Number(number ?? 0),
+  ];
+}
+
+/** Negative if a comes before b, positive if after, 0 if they are the same version. */
+function compareVersions(a, b) {
+  const left = parseVersion(a);
+  const right = parseVersion(b);
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) {
+      return left[i] - right[i];
+    }
+  }
+  return 0;
+}
+
+/**
+ * The greatest of the candidates that is below the version: 7.0.8 for 7.0.9, and 7.0.9 for
+ * 7.0.9.1. Undefined if there is none. A candidate that is not the version of a release is not
+ * taken.
+ */
+function previousVersion(version, candidates) {
+  if (!parseVersion(version)) {
+    return undefined;
+  }
+  return candidates
+    .filter((candidate) => parseVersion(candidate))
+    .filter((candidate) => compareVersions(candidate, version) < 0)
+    .sort(compareVersions)
+    .at(-1);
+}
+
+;// CONCATENATED MODULE: ./src/report.js
+
+
+
+
+
+
+/** The commits that a list shows, then "and N more" with a link to the compare view. */
+const LIST_LIMIT = 50;
+
+const isRelease = (branch) => branch.startsWith("release/");
+
+/**
+ * What the commits of a branch are compared with, to list the ones that OSS lacks:
+ *
+ * - a hotfix is compared with the OSS version that it is based on (the tag 7.0.9 for 7.0.9.1).
+ *   Until that release is public there is no such tag, and it is compared with the branch that
+ *   it is based on (release/7.0.9, or embargoed/7.0.9-INTERNAL-SNAPSHOT for the snapshot)
+ * - the other branches are compared with the branch of the OSS repository of their generation
+ *   (7.0.x)
+ * - if that cannot be done (OSS has no such branch, or could not be read), or if the run
+ *   was not told where OSS is, with the pushed commit: the commits that the run made.
+ *
+ * It returns { gitRef, commandRef, heading, oss }: the ref that git is given, the ref as a
+ * clone has it (for the command that the summary prints), the heading of the list, and
+ * whether the clone needs OSS for it.
+ */
+function compareWith({
+  directory,
+  role,
+  kind,
+  remote,
+  base,
+  oss,
+  basedOn,
+}) {
+  const pushed = {
+    gitRef: base,
+    commandRef: base.slice(0, 10),
+    oss: false,
+  };
+  const configured = Boolean(oss.url);
+  const unreadable = oss.error ? `OSS could not be read: ${oss.error}` : "";
+
+  if (kind === "active") {
+    if (oss.tagRef) {
+      return {
+        gitRef: oss.tagRef,
+        commandRef: oss.tag,
+        heading: `**Commits not in OSS \`${oss.tag}\`**`,
+        oss: true,
+      };
+    }
+    const why =
+      unreadable || (oss.tag ? `OSS ${oss.tag} is not public yet` : "");
+    const branchRef = basedOn && `refs/remotes/${remote}/${basedOn}`;
+    if (branchRef && resolve(directory, branchRef)) {
+      return {
+        gitRef: branchRef,
+        commandRef: `${remote}/${basedOn}`,
+        heading: `**Commits not in OSS**${
+          why
+            ? ` (${why}, so compared with \`${basedOn}\`, the branch it is based on)`
+            : ` (compared with \`${basedOn}\`, the branch it is based on)`
+        }`,
+        oss: false,
+      };
+    }
+    return {
+      ...pushed,
+      heading: `**Commits not in OSS** (${why || "OSS is not known"}${basedOn ? `, and \`${basedOn}\` does not exist` : ""}, so these are the commits that the run made on the pushed commit)`,
+    };
+  }
+
+  if (oss.branchRef) {
+    return {
+      gitRef: oss.branchRef,
+      commandRef: `oss/${oss.branch}`,
+      heading: `**Commits not in OSS \`${oss.branch}\`**`,
+      oss: true,
+    };
+  }
+  if (!configured) {
+    return { ...pushed, heading: "**Commits on the pushed commit**" };
+  }
+  return {
+    ...pushed,
+    heading: `**Commits not in OSS** (${unreadable || `OSS has no branch \`${oss.branch}\``}, so these are the commits that the run made on the pushed commit)`,
+  };
+}
+
+/**
+ * The release before a version: the greatest below it among the tags (OSS has them all, as
+ * the release is public) and the release branches of the repository that is checked out
+ * (release/7.0.8), as a clone has them. Undefined if there is none.
+ */
+function previousRelease({ directory, remote, version }) {
+  const found = new Map();
+  const note = (candidate, gitRef, commandRef, rank) => {
+    if (parseVersion(candidate) && !(found.get(candidate)?.rank <= rank)) {
+      found.set(candidate, { gitRef, commandRef, rank });
+    }
+  };
+  const refs = gitTry(
+    directory,
+    "for-each-ref",
+    "--format=%(refname)",
+    "refs/oss-tags",
+    "refs/tags",
+    `refs/remotes/${remote}/release`,
+  ).stdout.split("\n");
+  for (const ref of refs.filter(Boolean)) {
+    let match;
+    if ((match = /^refs\/oss-tags\/(.+)$/.exec(ref))) {
+      note(match[1], ref, match[1], 0);
+    } else if ((match = /^refs\/tags\/(.+)$/.exec(ref))) {
+      note(match[1], ref, match[1], 1);
+    } else if ((match = /^refs\/remotes\/[^/]+\/release\/(.+)$/.exec(ref))) {
+      note(match[1], ref, `${remote}/release/${match[1]}`, 2);
+    }
+  }
+  const previous = previousVersion(version, [...found.keys()]);
+  if (!previous) {
+    return undefined;
+  }
+  const { gitRef, commandRef, rank } = found.get(previous);
+  return { version: previous, gitRef, commandRef, oss: rank === 0 };
+}
+
+/**
+ * Everything that the summary says about the branches that were pushed, read from the
+ * repository: how each was created, the commits that OSS lacks, and what the release has since
+ * the one before it. The branches are in the order they are built in: the snapshot, then the release.
+ */
+function collectReport({
+  directory,
+  remote,
+  pushed,
+  base,
+  refName,
+  kind,
+  train,
+  oss,
+  snapshotOf,
+  releaseOf,
+  merged,
+}) {
+  const sorted = [...pushed].sort(
+    (a, b) => Number(isRelease(a.branch)) - Number(isRelease(b.branch)),
+  );
+  const sections = sorted.map(({ branch, version }) => {
+    const role = isRelease(branch) ? "release" : "snapshot";
+    const basedOn = role === "release" ? releaseOf : snapshotOf;
+    const compare = compareWith({
+      directory,
+      role,
+      kind,
+      remote,
+      base,
+      oss,
+      basedOn,
+    });
+    const commits = commitsNotIn(directory, compare.gitRef, branch);
+    const after = commitsMadeAfter(directory, base, branch);
+    const section = {
+      branch,
+      version,
+      role,
+      compare,
+      commits,
+      compareSha: resolve(directory, compare.gitRef),
+      steps: { role, kind, base, refName, commits: after, basedOn, train },
+      merged: role === "release" ? merged.release : merged.snapshot,
+    };
+    if (role === "release") {
+      const previous = previousRelease({ directory, remote, version });
+      if (previous) {
+        section.since = {
+          ...previous,
+          sha: resolve(directory, previous.gitRef),
+          commits: countCommits(directory, previous.gitRef, branch, {
+            merges: false,
+          }),
+          all: countCommits(directory, previous.gitRef, branch, {
+            merges: true,
+          }),
+        };
+      }
+    }
+    return section;
+  });
+  return { sections, base, remote, oss, kind };
+}
+
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** The lines of the section of a branch: how it was created, its commits, and its commands. */
+function renderSection(section, { remote, cell }) {
+  const repository = repositoryUrl();
+  const lines = [
+    `#### ${cell(section.branch)}`,
+    "",
+    "**How it was created**",
+    "",
+  ];
+  describeSteps({
+    ...section.steps,
+    merged: section.merged,
+    link: commitLink,
+  }).forEach((step, i) => lines.push(`${i + 1}. ${step}`));
+
+  lines.push("", section.compare.heading, "");
+  if (section.commits.length === 0) {
+    lines.push("None.");
+  }
+  for (const commit of section.commits.slice(0, LIST_LIMIT)) {
+    lines.push(`- ${commitLink(commit.sha)} ${escapeMarkdown(commit.subject)}`);
+  }
+  const more = section.commits.length - LIST_LIMIT;
+  if (more > 0) {
+    const text = `and ${more} more`;
+    lines.push(
+      repository && section.compareSha
+        ? `- [${text}](${repository}/compare/${section.compareSha}...${encodeURI(section.branch)})`
+        : `- ${text}`,
+    );
+  }
+  lines.push(
+    "",
+    "```shell",
+    `git log --oneline --no-merges --reverse ${section.compare.commandRef}..${remote}/${section.branch}`,
+    "```",
+  );
+
+  if (section.since) {
+    const { version, commits, all, sha, commandRef } = section.since;
+    const merges = all - commits;
+    const compare =
+      repository && sha
+        ? `: [compare view](${repository}/compare/${sha}...${encodeURI(section.branch)})`
+        : "";
+    lines.push(
+      "",
+      "**All changes in this release**",
+      "",
+      `${plural(commits, "commit")} since ${version}${merges > 0 ? ` (${all} with the ${plural(merges, "merge commit")})` : ""}${compare}`,
+      "",
+      "```shell",
+      `git log --oneline --no-merges ${commandRef}..${remote}/${section.branch}`,
+      "```",
+    );
+  }
+  return lines;
+}
+
+/**
+ * The commands that get a clone ready for the ones of the summary: OSS as a remote, if a command
+ * uses it, and the branches that were pushed.
+ */
+function setupCommands(report) {
+  const { sections, oss, remote } = report;
+  const lines = [];
+  const usesOss =
+    sections.some(({ compare, since }) => compare.oss || since?.oss) && oss.url;
+  if (usesOss) {
+    const branch = sections.some(({ compare }) =>
+      compare.commandRef.startsWith("oss/"),
+    )
+      ? ` ${oss.branch}`
+      : "";
+    lines.push(
+      `git remote add oss ${oss.url}`,
+      `git fetch oss${branch} --tags`,
+    );
+  }
+  lines.push(`git fetch ${remote}`);
+  return { lines, usesOss: Boolean(usesOss) };
+}
+
+;// CONCATENATED MODULE: ./src/index.js
+
+
+
+
+
+
+
+/**
+ * The branches to push from the lines of the input: branch=version, one per line, where the
+ * version is what the summary says the branch has.
+ */
+function parseBranches(text) {
+  const branches = (text ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const at = line.lastIndexOf("=");
+      if (at <= 0 || at === line.length - 1) {
+        throw new Error(`"${line}" is not branch=version`);
+      }
+      return { branch: line.slice(0, at), version: line.slice(at + 1) };
+    });
+  if (branches.length === 0) {
+    throw new Error(
+      "The input branches is required: branch=version, one per line",
+    );
+  }
+  return branches;
+}
+
+/**
+ * Pushes the branches at once, or none (git push --atomic), so that a failure never leaves
+ * one of them built and the others not. It is forced, because the branches are built
+ * again from the pushed commit every time. It returns, for every branch, how many commits
+ * it has on the pushed commit.
+ */
+function pushBranches({ directory, remote = "origin", branches, base }) {
+  const counts = branches.map(({ branch }) =>
+    Number(git(directory, "rev-list", "--count", `${base}..${branch}`)),
+  );
+  git(
+    directory,
+    "push",
+    "--atomic",
+    "--force",
+    remote,
+    ...branches.map((b) => b.branch),
+  );
+  return branches.map((b, i) => ({ ...b, commits: counts[i] }));
+}
+
+/** The sentence that says what the push creates: the branches that are used for releasing. */
+function introduction(sections, kind) {
+  const cells = sections.map(({ branch }) => branchCell(branch));
+  const release = sections.find(({ role }) => role === "release");
+  const snapshot = sections.find(({ role }) => role === "snapshot");
+  if (sections.length === 2 && release && snapshot) {
+    const what = `${kind === "active" ? "the hotfix " : ""}${release.version}`;
+    return `This push creates two branches that are used for releasing ${what}: ${branchCell(snapshot.branch)}, the snapshot, and ${branchCell(release.branch)}, the release. They are pushed together (one atomic push).`;
+  }
+  if (sections.length === 1) {
+    return `This push creates the branch ${cells[0]}.`;
+  }
+  return `This push creates the branches ${cells.join(", ")}. They are pushed together (one atomic push).`;
+}
+
+/** The address that git fetches OSS from: the input oss-url, or the repository on the server. */
+function ossUrl() {
+  const url = getInput("oss-url");
+  if (url) {
+    return url;
+  }
+  const repository = getInput("oss-repository");
+  if (!repository) {
+    return "";
+  }
+  const server = (
+    process.env.GITHUB_SERVER_URL || "https://github.com"
+  ).replace(/\/+$/, "");
+  return `${server}/${repository}.git`;
+}
+
 async function main() {
   const base = getInput("base") || process.env.GITHUB_SHA;
   if (!base) {
     throw new Error("The input base is required: the commit that was pushed");
   }
+  const directory = getInput("path") || ".";
+  const remote = getInput("remote") || "origin";
   const pushed = pushBranches({
-    directory: getInput("path") || ".",
-    remote: getInput("remote") || "origin",
+    directory,
+    remote,
     branches: parseBranches(getInput("branches")),
     base,
   });
@@ -31830,9 +32495,45 @@ async function main() {
       `Pushed ${branch} (${version}): ${commits} commits on ${base.slice(0, 7)}`,
     );
   }
+  const ossBranch = getInput("oss-branch");
+  const ossTag = getInput("oss-tag");
+  const oss = {
+    branch: ossBranch,
+    tag: ossTag,
+    ...fetchOss({
+      directory,
+      url: ossUrl(),
+      branch: ossBranch,
+      tag: ossTag,
+    }),
+  };
+  if (oss.error) {
+    warning(`OSS could not be read: ${oss.error}`, {
+      title: "No OSS to compare with",
+    });
+  }
+  const report = collectReport({
+    directory,
+    remote,
+    pushed,
+    base,
+    refName: process.env.GITHUB_REF_NAME,
+    kind: getInput("kind"),
+    train: getInput("train"),
+    oss,
+    snapshotOf: getInput("snapshot-of"),
+    releaseOf: getInput("release-of"),
+    merged: {
+      snapshot: getInput("merged-snapshot"),
+      release: getInput("merged-release"),
+    },
+  });
+  const setup = setupCommands(report);
   addSummary(
     [
       `### ${getInput("title") || process.env.GITHUB_REF_NAME || "Branches"}`,
+      "",
+      introduction(report.sections, report.kind),
       "",
       ...trainLine(
         getInput("train"),
@@ -31842,13 +32543,24 @@ async function main() {
         getInput("train-state-url"),
       ),
       table(
-        ["Branch", "Version", "Commits on the pushed commit"],
-        pushed.map(({ branch, version, commits }) => [
+        ["Branch", "Version", "Not in OSS"],
+        report.sections.map(({ branch, version, commits }) => [
           branchCell(branch),
           versionCell(version, getInput("milestone-url")),
-          commits,
+          commits.length,
         ]),
       ),
+      "",
+      `The pushed commit is ${commitLink(base)}. To run the commands below, in a clone of this repository${setup.usesOss ? ", add OSS once and fetch the branches" : ", fetch the branches"}:`,
+      "",
+      "```shell",
+      ...setup.lines,
+      "```",
+      "",
+      ...report.sections.flatMap((section) => [
+        ...renderSection(section, { remote, cell: (b) => `\`${b}\`` }),
+        "",
+      ]),
     ].join("\n"),
   );
 }
@@ -31857,10 +32569,9 @@ if (isMain(import.meta.url)) {
   execute(main);
 }
 
-var __webpack_exports__branchCell = __webpack_exports__.pO;
+var __webpack_exports__introduction = __webpack_exports__.rx;
 var __webpack_exports__main = __webpack_exports__.iW;
+var __webpack_exports__ossUrl = __webpack_exports__.BE;
 var __webpack_exports__parseBranches = __webpack_exports__.G;
 var __webpack_exports__pushBranches = __webpack_exports__.XB;
-var __webpack_exports__trainLine = __webpack_exports__.hR;
-var __webpack_exports__versionCell = __webpack_exports__.zu;
-export { __webpack_exports__branchCell as branchCell, __webpack_exports__main as main, __webpack_exports__parseBranches as parseBranches, __webpack_exports__pushBranches as pushBranches, __webpack_exports__trainLine as trainLine, __webpack_exports__versionCell as versionCell };
+export { __webpack_exports__introduction as introduction, __webpack_exports__main as main, __webpack_exports__ossUrl as ossUrl, __webpack_exports__parseBranches as parseBranches, __webpack_exports__pushBranches as pushBranches };

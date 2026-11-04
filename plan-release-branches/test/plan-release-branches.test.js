@@ -11,8 +11,11 @@ describe("plan", () => {
       kind: "frozen",
       baseVersion: "7.0.1-SNAPSHOT",
       hotfix: false,
-      hotfixOf: "",
+      hotfixOfSnapshot: "",
+      hotfixOfRelease: "",
       hotfixOfVersion: "",
+      ossBranch: "7.0.x",
+      ossTag: "",
       deploymentDestination: "Maven Central",
       frozenBranch: "",
       snapshotBranch: "embargoed/7.0.1-INTERNAL-SNAPSHOT",
@@ -30,7 +33,7 @@ describe("plan", () => {
     expect(result.baseVersion).toBe("7.1.0-SNAPSHOT");
   });
 
-  it("builds a hotfix for an active embargoed branch, on the release, and no internal snapshot", () => {
+  it("builds a hotfix for an active embargoed branch, on the snapshot and on the release, and no internal snapshot of its own", () => {
     expect(
       plan({ refName: "embargoed/active/7.0.x", version: "7.0.1-SNAPSHOT" }),
     ).toEqual({
@@ -38,8 +41,11 @@ describe("plan", () => {
       kind: "active",
       baseVersion: "7.0.1.1-SNAPSHOT",
       hotfix: true,
-      hotfixOf: "release/7.0.1-SNAPSHOT",
+      hotfixOfSnapshot: "embargoed/7.0.1-INTERNAL-SNAPSHOT",
+      hotfixOfRelease: "release/7.0.1",
       hotfixOfVersion: "7.0.1",
+      ossBranch: "7.0.x",
+      ossTag: "7.0.1",
       deploymentDestination: "Spring Enterprise",
       frozenBranch: "embargoed/frozen/7.0.x",
       snapshotBranch: "embargoed/7.0.1.1-SNAPSHOT",
@@ -55,8 +61,11 @@ describe("plan", () => {
       kind: "lts",
       baseVersion: "5.8.30-SNAPSHOT",
       hotfix: false,
-      hotfixOf: "",
+      hotfixOfSnapshot: "",
+      hotfixOfRelease: "",
       hotfixOfVersion: "",
+      ossBranch: "5.8.x",
+      ossTag: "",
       deploymentDestination: "Spring Enterprise",
       frozenBranch: "",
       snapshotBranch: "embargoed/5.8.30-SNAPSHOT",
@@ -72,8 +81,11 @@ describe("plan", () => {
       kind: "active",
       baseVersion: "7.1.0.1-SNAPSHOT",
       hotfix: true,
-      hotfixOf: "release/7.1.0-SNAPSHOT",
+      hotfixOfSnapshot: "embargoed/7.1.0-INTERNAL-SNAPSHOT",
+      hotfixOfRelease: "release/7.1.0",
       hotfixOfVersion: "7.1.0",
+      ossBranch: "main",
+      ossTag: "7.1.0",
       snapshotBranch: "embargoed/7.1.0.1-SNAPSHOT",
     });
   });
@@ -89,8 +101,8 @@ describe("plan", () => {
       plan({
         refName: "embargoed/active/try-hotfix",
         version: "7.0.3-SNAPSHOT",
-      }).hotfixOf,
-    ).toBe("release/7.0.3-SNAPSHOT");
+      }).hotfixOfRelease,
+    ).toBe("release/7.0.3");
   });
 
   it("names the frozen embargoed branch of the same generation for an active one, whatever the generation is called", () => {
@@ -169,8 +181,11 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         kind: "active",
         "base-version": "7.0.1.1-SNAPSHOT",
         hotfix: "true",
-        "hotfix-of": "release/7.0.1-SNAPSHOT",
+        "hotfix-of-snapshot": "embargoed/7.0.1-INTERNAL-SNAPSHOT",
+        "hotfix-of-release": "release/7.0.1",
         "hotfix-of-version": "7.0.1",
+        "oss-branch": "7.0.x",
+        "oss-tag": "7.0.1",
         "deployment-destination": "Spring Enterprise",
         "frozen-branch": "embargoed/frozen/7.0.x",
         "snapshot-branch": "embargoed/7.0.1.1-SNAPSHOT",
@@ -181,7 +196,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       );
     });
 
-    it("writes the outputs of a frozen embargoed branch, with an empty hotfix-of", async () => {
+    it("writes the outputs of a frozen embargoed branch, with no hotfix bases", async () => {
       const result = await runAction(entry, {
         "ref-name": "embargoed/frozen/main",
         version: "7.1.0-SNAPSHOT",
@@ -190,7 +205,10 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         release: "true",
         kind: "frozen",
         hotfix: "false",
-        "hotfix-of": "",
+        "hotfix-of-snapshot": "",
+        "hotfix-of-release": "",
+        "oss-branch": "main",
+        "oss-tag": "",
         "deployment-destination": "Maven Central",
         "frozen-branch": "",
         "snapshot-branch": "embargoed/7.1.0-INTERNAL-SNAPSHOT",

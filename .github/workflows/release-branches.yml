@@ -11,11 +11,15 @@ name: release-branches
 #
 #   embargoed/active/<generation>   the hotfix of the version of the branch: the release
 #                                    of that version, and the fixes of the active embargoed branch
-#     embargoed/<hotfix>-SNAPSHOT            the release merged in (release/<version>, if
-#                                             it exists), the commercial license and headers,
+#     embargoed/<hotfix>-SNAPSHOT            the snapshot of the release merged in
+#                                             (embargoed/<version>-INTERNAL-SNAPSHOT, if it
+#                                             exists), the commercial license and headers,
 #                                             the hotfix version, and snapshots of the
 #                                             dependencies that have a hotfix
-#     release/<hotfix>                        the release of the hotfix, from that branch
+#     release/<hotfix>                        the release of the hotfix, from the pushed commit,
+#                                             with the release merged in (release/<version>, if
+#                                             it exists), the commercial license and headers,
+#                                             the dependencies that have a hotfix, and the version
 #   embargoed/lts/<generation>      a long-term support release of the version of the branch
 #     embargoed/<version>-SNAPSHOT            a snapshot of the version, from the pushed commit, with
 #                                             snapshots of the dependencies that have joined the train
@@ -90,7 +94,10 @@ jobs:
       kind: ${{ steps.plan.outputs.kind }}
       base-version: ${{ steps.plan.outputs.base-version }}
       hotfix: ${{ steps.plan.outputs.hotfix }}
-      hotfix-of: ${{ steps.plan.outputs.hotfix-of }}
+      hotfix-of-snapshot: ${{ steps.plan.outputs.hotfix-of-snapshot }}
+      hotfix-of-release: ${{ steps.plan.outputs.hotfix-of-release }}
+      oss-branch: ${{ steps.plan.outputs.oss-branch }}
+      oss-tag: ${{ steps.plan.outputs.oss-tag }}
       snapshot-branch: ${{ steps.plan.outputs.snapshot-branch }}
       snapshot-version: ${{ steps.plan.outputs.snapshot-version }}
       release-version: ${{ steps.release.outputs.release-version }}
@@ -187,7 +194,8 @@ jobs:
     env:
       KIND: ${{ needs.plan.outputs.kind }}
       HOTFIX: ${{ needs.plan.outputs.hotfix }}
-      HOTFIX_OF: ${{ needs.plan.outputs.hotfix-of }}
+      HOTFIX_OF_SNAPSHOT: ${{ needs.plan.outputs.hotfix-of-snapshot }}
+      HOTFIX_OF_RELEASE: ${{ needs.plan.outputs.hotfix-of-release }}
       BASE_VERSION: ${{ needs.plan.outputs.base-version }}
       SNAPSHOT_BRANCH: ${{ needs.plan.outputs.snapshot-branch }}
       SNAPSHOT_VERSION: ${{ needs.plan.outputs.snapshot-version }}
@@ -249,15 +257,15 @@ jobs:
         with:
           branch: ${{ env.SNAPSHOT_BRANCH }}
           from: ${{ github.sha }}
-      # A hotfix is the release plus the fixes of the active embargoed branch, so it starts with the
-      # release merged in. The versions of the dependencies of the release come with it:
-      # a dependency that has no hotfix is left at the version that the release has.
-      - name: Merge the release into the hotfix
-        id: merge
+      # The snapshot of a hotfix is the snapshot of the release plus the fixes of the active
+      # embargoed branch, so it starts with the snapshot of the release merged in
+      # (embargoed/7.0.1-INTERNAL-SNAPSHOT).
+      - name: Merge the snapshot of the release into the snapshot of the hotfix
+        id: merge-snapshot
         if: env.KIND == 'active'
         uses: spring-io/spring-security-actions/merge-release@12ddadcb45dec9bbec2a7d98985b57d7e22ef703 # 0.0.16
         with:
-          release: ${{ env.HOTFIX_OF }}
+          release: ${{ env.HOTFIX_OF_SNAPSHOT }}
       - name: Apply the commercial license
         if: env.KIND == 'active'
         uses: spring-io/spring-security-actions/apply-commercial-license@12ddadcb45dec9bbec2a7d98985b57d7e22ef703 # 0.0.16
@@ -286,14 +294,29 @@ jobs:
           versions: ${{ steps.snapshot-versions.outputs.versions }}
           require-issue: "false"
 
-      # The release branch: from the pushed commit, and for a hotfix from the snapshot
-      # branch. The dependencies of the release train, each with an issue and a commit,
-      # and the version of the release, last.
+      # The release branch: from the pushed commit, and not from the snapshot branch, which has the
+      # snapshots of the dependencies. A hotfix is the release plus the fixes of the active
+      # embargoed branch, so it starts with the release merged in (release/7.0.1), and then the
+      # commercial license. The versions of the dependencies of the release come with it: a
+      # dependency that has no hotfix is left at the version that the release has. Then the
+      # dependencies of the release train, each with an issue and a commit, and the version of the
+      # release, last.
       - name: Start the release branch
         uses: spring-io/spring-security-actions/start-branch@12ddadcb45dec9bbec2a7d98985b57d7e22ef703 # 0.0.16
         with:
           branch: release/${{ needs.plan.outputs.release-version }}
-          from: ${{ env.KIND == 'active' && env.SNAPSHOT_BRANCH || github.sha }}
+          from: ${{ github.sha }}
+      - name: Merge the release into the hotfix
+        id: merge-release
+        if: env.KIND == 'active'
+        uses: spring-io/spring-security-actions/merge-release@12ddadcb45dec9bbec2a7d98985b57d7e22ef703 # 0.0.16
+        with:
+          release: ${{ env.HOTFIX_OF_RELEASE }}
+      - name: Apply the commercial license to the hotfix
+        if: env.KIND == 'active'
+        uses: spring-io/spring-security-actions/apply-commercial-license@12ddadcb45dec9bbec2a7d98985b57d7e22ef703 # 0.0.16
+        with:
+          commit-message: Commercial changes for ${{ needs.plan.outputs.release-version }}
       - name: Work out the versions of the dependencies
         id: versions
         if: steps.train.outputs.found == 'true'
@@ -330,6 +353,14 @@ jobs:
       - name: Push the branches
         uses: spring-io/spring-security-actions/push-branches@12ddadcb45dec9bbec2a7d98985b57d7e22ef703 # 0.0.16
         with:
+          kind: ${{ env.KIND }}
+          oss-repository: ${{ needs.plan.outputs.oss-repository }}
+          oss-branch: ${{ needs.plan.outputs.oss-branch }}
+          oss-tag: ${{ needs.plan.outputs.oss-tag }}
+          snapshot-of: ${{ env.HOTFIX_OF_SNAPSHOT }}
+          release-of: ${{ env.HOTFIX_OF_RELEASE }}
+          merged-snapshot: ${{ steps.merge-snapshot.outputs.merged }}
+          merged-release: ${{ steps.merge-release.outputs.merged }}
           milestone-url: ${{ needs.plan.outputs.milestone-url }}
           train: ${{ steps.train.outputs.found == 'true' && steps.train.outputs.branch || '' }}
           train-url: ${{ steps.train.outputs.found == 'true' && format('{0}/{1}/tree/{2}', github.server_url, inputs.release-train-repository || 'spring-io/release-train', steps.train.outputs.branch) || '' }}

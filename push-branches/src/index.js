@@ -1,7 +1,16 @@
 import * as core from "@actions/core";
 import { git } from "./git.js";
 import { execute, isMain } from "./run.js";
-import { addSummary, table } from "./summary.js";
+import { fetchOss } from "./oss.js";
+import { collectReport, renderSection, setupCommands } from "./report.js";
+import {
+  addSummary,
+  branchCell,
+  commitLink,
+  table,
+  trainLine,
+  versionCell,
+} from "./summary.js";
 
 /**
  * The branches to push from the lines of the input: branch=version, one per line, where the
@@ -48,57 +57,35 @@ export function pushBranches({ directory, remote = "origin", branches, base }) {
   return branches.map((b, i) => ({ ...b, commits: counts[i] }));
 }
 
-/**
- * The cell of a branch in the summary: its name, linked to the branch on GitHub when the
- * repository is known (GITHUB_REPOSITORY), and plain otherwise.
- */
-export function branchCell(branch) {
-  const name = `\`${branch}\``;
-  const repository = process.env.GITHUB_REPOSITORY;
+/** The sentence that says what the push creates: the branches that are used for releasing. */
+export function introduction(sections, kind) {
+  const cells = sections.map(({ branch }) => branchCell(branch));
+  const release = sections.find(({ role }) => role === "release");
+  const snapshot = sections.find(({ role }) => role === "snapshot");
+  if (sections.length === 2 && release && snapshot) {
+    const what = `${kind === "active" ? "the hotfix " : ""}${release.version}`;
+    return `This push creates two branches that are used for releasing ${what}: ${branchCell(snapshot.branch)}, the snapshot, and ${branchCell(release.branch)}, the release. They are pushed together (one atomic push).`;
+  }
+  if (sections.length === 1) {
+    return `This push creates the branch ${cells[0]}.`;
+  }
+  return `This push creates the branches ${cells.join(", ")}. They are pushed together (one atomic push).`;
+}
+
+/** The address that git fetches OSS from: the input oss-url, or the repository on the server. */
+export function ossUrl() {
+  const url = core.getInput("oss-url");
+  if (url) {
+    return url;
+  }
+  const repository = core.getInput("oss-repository");
   if (!repository) {
-    return name;
+    return "";
   }
   const server = (
     process.env.GITHUB_SERVER_URL || "https://github.com"
   ).replace(/\/+$/, "");
-  const encoded = branch.split("/").map(encodeURIComponent).join("/");
-  return `[${name}](${server}/${repository}/tree/${encoded})`;
-}
-
-/**
- * The cell of a version in the summary: linked to the milestone of the release, if there
- * is one. A snapshot version (-SNAPSHOT, -INTERNAL-SNAPSHOT) has no milestone, so it is
- * plain text.
- */
-export function versionCell(version, milestoneUrl) {
-  if (!milestoneUrl || version.endsWith("-SNAPSHOT")) {
-    return version;
-  }
-  return `[${version}](${milestoneUrl})`;
-}
-
-const TRAIN_STATUS = {
-  "not-joined": "not joined yet",
-  joined: "joined, not ready yet",
-  ready: "ready",
-};
-
-/**
- * The line of the summary that links to the release train that was used: the text is the
- * link, followed by the state of the train (linked) and where the release is in it (the status of check-not-ready).
- * Nothing without a train.
- */
-export function trainLine(train, trainUrl, status, state, stateUrl) {
-  if (!train) {
-    return [];
-  }
-  const name = `Release train ${train}`;
-  let text = trainUrl ? `[${name}](${trainUrl})` : name;
-  if (state) {
-    text += ` is ${stateUrl ? `[${state}](${stateUrl})` : state}`;
-  }
-  const where = TRAIN_STATUS[status];
-  return [where ? `${text}: ${where}` : text, ""];
+  return `${server}/${repository}.git`;
 }
 
 export async function main() {
@@ -106,9 +93,11 @@ export async function main() {
   if (!base) {
     throw new Error("The input base is required: the commit that was pushed");
   }
+  const directory = core.getInput("path") || ".";
+  const remote = core.getInput("remote") || "origin";
   const pushed = pushBranches({
-    directory: core.getInput("path") || ".",
-    remote: core.getInput("remote") || "origin",
+    directory,
+    remote,
     branches: parseBranches(core.getInput("branches")),
     base,
   });
@@ -117,9 +106,45 @@ export async function main() {
       `Pushed ${branch} (${version}): ${commits} commits on ${base.slice(0, 7)}`,
     );
   }
+  const ossBranch = core.getInput("oss-branch");
+  const ossTag = core.getInput("oss-tag");
+  const oss = {
+    branch: ossBranch,
+    tag: ossTag,
+    ...fetchOss({
+      directory,
+      url: ossUrl(),
+      branch: ossBranch,
+      tag: ossTag,
+    }),
+  };
+  if (oss.error) {
+    core.warning(`OSS could not be read: ${oss.error}`, {
+      title: "No OSS to compare with",
+    });
+  }
+  const report = collectReport({
+    directory,
+    remote,
+    pushed,
+    base,
+    refName: process.env.GITHUB_REF_NAME,
+    kind: core.getInput("kind"),
+    train: core.getInput("train"),
+    oss,
+    snapshotOf: core.getInput("snapshot-of"),
+    releaseOf: core.getInput("release-of"),
+    merged: {
+      snapshot: core.getInput("merged-snapshot"),
+      release: core.getInput("merged-release"),
+    },
+  });
+  const setup = setupCommands(report);
   addSummary(
     [
       `### ${core.getInput("title") || process.env.GITHUB_REF_NAME || "Branches"}`,
+      "",
+      introduction(report.sections, report.kind),
       "",
       ...trainLine(
         core.getInput("train"),
@@ -129,13 +154,24 @@ export async function main() {
         core.getInput("train-state-url"),
       ),
       table(
-        ["Branch", "Version", "Commits on the pushed commit"],
-        pushed.map(({ branch, version, commits }) => [
+        ["Branch", "Version", "Not in OSS"],
+        report.sections.map(({ branch, version, commits }) => [
           branchCell(branch),
           versionCell(version, core.getInput("milestone-url")),
-          commits,
+          commits.length,
         ]),
       ),
+      "",
+      `The pushed commit is ${commitLink(base)}. To run the commands below, in a clone of this repository${setup.usesOss ? ", add OSS once and fetch the branches" : ", fetch the branches"}:`,
+      "",
+      "```shell",
+      ...setup.lines,
+      "```",
+      "",
+      ...report.sections.flatMap((section) => [
+        ...renderSection(section, { remote, cell: (b) => `\`${b}\`` }),
+        "",
+      ]),
     ].join("\n"),
   );
 }
