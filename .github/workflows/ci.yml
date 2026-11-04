@@ -71,3 +71,17 @@ jobs:
         run: git diff --exit-code -- dist
       - name: Test
         run: npm test
+
+  # The one job that a ruleset requires: the jobs of the matrix are named after the actions, which
+  # come and go, so they cannot be required by name. A job that was skipped or failed fails this one.
+  result:
+    name: CI result
+    if: always()
+    needs: [actions, check]
+    runs-on: ubuntu-latest
+    env:
+      ACTIONS: ${{ needs.actions.result }}
+      CHECK: ${{ needs.check.result }}
+    steps:
+      - name: Check that every job passed
+        run: test "$ACTIONS" = success && test "$CHECK" = success
