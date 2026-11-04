@@ -1,9 +1,18 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 import {
   candidateOf,
+  createdMilestoneSummary,
   noTrainSummary,
   releaseTrainOf,
   run,
@@ -371,69 +380,175 @@ describe("run", () => {
 
 describe("noTrainSummary", () => {
   const server = "https://github.com";
-  it("links to create a milestone that does not exist", () => {
-    expect(
-      noTrainSummary({ candidate: "7.0.9", repository: "acme/widgets" }),
-    ).toBe(
-      [
-        "### 7.0.9 is not in a release train",
-        "",
-        "acme/widgets has no milestone 7.0.9.",
-        "",
-        `To add it to a release train, [create the milestone 7.0.9](${server}/acme/widgets/milestones/new) in acme/widgets with a due date that matches a release train: the name of its branch in the release train repository is its date (the train 2026.11.19 is due 2026-11-19), and run the workflow again.`,
-        "",
-      ].join("\n"),
-    );
+
+  describe("frozen (an OSS milestone)", () => {
+    it("links to create a milestone that does not exist, and asks for the date of a train", () => {
+      expect(
+        noTrainSummary({
+          candidate: "7.0.1",
+          repository: "acme/widgets",
+          kind: "frozen",
+        }),
+      ).toBe(
+        [
+          "### 7.0.1 is not in a release train",
+          "",
+          "acme/widgets has no milestone 7.0.1.",
+          "",
+          "To add it to a release train:",
+          `1. [create the milestone 7.0.1](${server}/acme/widgets/milestones/new) in acme/widgets.`,
+          "2. Set its due date to the date of a release train (for example 2026-11-19).",
+          "3. Run the workflow again.",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("is the default kind", () => {
+      expect(
+        noTrainSummary({ candidate: "7.0.1", repository: "acme/widgets" }),
+      ).toBe(
+        noTrainSummary({
+          candidate: "7.0.1",
+          repository: "acme/widgets",
+          kind: "frozen",
+        }),
+      );
+    });
+
+    it("links to set the due date of a milestone that has none", () => {
+      expect(
+        noTrainSummary({
+          candidate: "7.0.1",
+          repository: "acme/widgets",
+          milestone: { html_url: `${server}/acme/widgets/milestone/12` },
+          kind: "frozen",
+        }),
+      ).toBe(
+        [
+          "### 7.0.1 is not in a release train",
+          "",
+          "The milestone 7.0.1 of acme/widgets has no due date.",
+          "",
+          "To add it to a release train:",
+          `1. [Set its due date](${server}/acme/widgets/milestone/12/edit) to the date of a release train (for example 2026-11-19).`,
+          "2. Run the workflow again.",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("does not mention the release train line", () => {
+      expect(
+        noTrainSummary({ candidate: "7.0.1", repository: "acme/widgets" }),
+      ).not.toContain("Release Train:");
+    });
   });
 
-  it("links to set the due date of a milestone that has none", () => {
-    const summary = noTrainSummary({
-      candidate: "7.2.0-M1",
-      repository: "acme/widgets",
-      milestone: { html_url: `${server}/acme/widgets/milestone/12` },
+  describe("lts (a commercial milestone)", () => {
+    it("asks for the release train line of the description, and not for a due date", () => {
+      const summary = noTrainSummary({
+        candidate: "6.5.12",
+        repository: "acme/widgets-commercial",
+        kind: "lts",
+      });
+      expect(summary).toBe(
+        [
+          "### 6.5.12 is not in a release train",
+          "",
+          "acme/widgets-commercial has no milestone 6.5.12.",
+          "",
+          "To add it to a release train:",
+          `1. [create the milestone 6.5.12](${server}/acme/widgets-commercial/milestones/new) in acme/widgets-commercial, and add a line \`Release Train: 2026.11.19\` to its description. The workflow sets its due date from the train.`,
+          "2. Run the workflow again.",
+          "",
+        ].join("\n"),
+      );
+      expect(summary).not.toContain("hotfix");
     });
-    expect(summary).toContain("has no due date.");
-    expect(summary).toContain(
-      `[set its due date](${server}/acme/widgets/milestone/12/edit)`,
-    );
+
+    it("links to edit the description of a milestone that does not name its train", () => {
+      const summary = noTrainSummary({
+        candidate: "6.5.12",
+        repository: "acme/widgets-commercial",
+        milestone: {
+          html_url: `${server}/acme/widgets-commercial/milestone/3`,
+        },
+        kind: "lts",
+      });
+      expect(summary).toContain(
+        "The description of the milestone 6.5.12 of acme/widgets-commercial does not name its release train.",
+      );
+      expect(summary).toContain(
+        `[Edit the milestone](${server}/acme/widgets-commercial/milestone/3/edit) and add a line \`Release Train: 2026.11.19\``,
+      );
+      expect(summary).not.toContain("due date to");
+    });
   });
 
-  it("tells to create the milestone of a hotfix in the commercial repository, with any due date, as the workflow sets it", () => {
-    const summary = noTrainSummary({
-      candidate: "7.0.1.1",
-      repository: "acme/widgets-commercial",
+  describe("active (a hotfix)", () => {
+    it("asks for the milestone of the hotfix in the commercial repository, with any due date", () => {
+      const summary = noTrainSummary({
+        candidate: "7.0.1.1",
+        repository: "acme/widgets-commercial",
+        kind: "active",
+      });
+      expect(summary).toBe(
+        [
+          "### 7.0.1.1 is not in a release train",
+          "",
+          "acme/widgets-commercial has no milestone 7.0.1.1.",
+          "",
+          "The hotfix 7.0.1.1 is in the release train of the OSS version 7.0.1: the train in which the milestone 7.0.1 of the OSS repository is due.",
+          "",
+          "To add it to a release train:",
+          `1. [create the milestone 7.0.1.1](${server}/acme/widgets-commercial/milestones/new) in acme/widgets-commercial. Any due date will do, because the workflow sets it to the commercial general availability of the train (for example 2026-12-24).`,
+          "2. Run the workflow again.",
+          "",
+        ].join("\n"),
+      );
+      expect(summary).not.toContain("Release Train:");
     });
-    expect(summary).toContain(
-      "acme/widgets-commercial has no milestone 7.0.1.1.",
-    );
-    expect(summary).toContain(
-      "[create the milestone 7.0.1.1](https://github.com/acme/widgets-commercial/milestones/new) in acme/widgets-commercial, and run the workflow again",
-    );
-    expect(summary).toContain(
-      "The title puts 7.0.1.1 in the release train of the OSS version 7.0.1",
-    );
-    expect(summary).toContain(
-      "commercial general availability of that train, which the workflow sets",
-    );
-    expect(summary).toContain("so any date will do");
-    // not the date of the train, as the milestone of a release has
-    expect(summary).not.toContain("a due date that matches a release train");
-    expect(summary).toContain(
-      "7.0.1.1 is a hotfix of the OSS version 7.0.1, and is released from the commercial repository: its milestone is in acme/widgets-commercial, not in the OSS repository.",
-    );
+
+    it("asks for the date of a train on the OSS milestone that the hotfix fixes", () => {
+      const summary = noTrainSummary({
+        candidate: "7.0.1",
+        repository: "acme/widgets",
+        kind: "active",
+      });
+      expect(summary).toContain("acme/widgets has no milestone 7.0.1.");
+      expect(summary).toContain(
+        "A hotfix of 7.0.1 is in the release train in which the milestone 7.0.1 is due.",
+      );
+      expect(summary).toContain(
+        `1. [create the milestone 7.0.1](${server}/acme/widgets/milestones/new) in acme/widgets.`,
+      );
+      expect(summary).toContain(
+        "2. Set its due date to the date of a release train (for example 2026-11-19).",
+      );
+      expect(summary).not.toContain("Release Train:");
+    });
+
+    it("links to set the due date of the OSS milestone that has none", () => {
+      const summary = noTrainSummary({
+        candidate: "7.0.1",
+        repository: "acme/widgets",
+        milestone: { html_url: `${server}/acme/widgets/milestone/12` },
+        kind: "active",
+      });
+      expect(summary).toContain(
+        "The milestone 7.0.1 of acme/widgets has no due date.",
+      );
+      expect(summary).toContain(
+        `[Set its due date](${server}/acme/widgets/milestone/12/edit) to the date of a release train`,
+      );
+    });
   });
 
-  it("tells that a hotfix milestone without a due date is set from the train", () => {
-    const summary = noTrainSummary({
-      candidate: "7.0.1.1",
-      repository: "acme/widgets-commercial",
-      milestone: {
-        html_url: "https://github.com/acme/widgets-commercial/milestone/3",
-      },
-    });
-    expect(summary).toContain("has no due date.");
-    expect(summary).toContain("Its due date is set from the release train");
-    expect(summary).not.toContain("set its due date](");
+  it("rejects a kind that it does not know", () => {
+    expect(() =>
+      noTrainSummary({ candidate: "7.0.1", repository: "a/b", kind: "x" }),
+    ).toThrow(/Unknown kind "x"/);
   });
 });
 
@@ -460,6 +575,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       expect(result.code).toBe(0);
       expect(result.outputs).toEqual({
         found: "true",
+        "no-release": "false",
         "release-version": "7.1.0-RC1",
         "due-date": "2026-11-19",
         "release-train": "",
@@ -493,6 +609,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       expect(result.code).toBe(0);
       expect(result.outputs).toEqual({
         found: "true",
+        "no-release": "false",
         "release-version": "7.2.0-M1",
         "due-date": "",
         "release-train": "",
@@ -507,7 +624,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       );
       for (const [version, expected] of [
         ["7.0.9-SNAPSHOT", "[create the milestone 7.0.9]"],
-        ["7.2.0-SNAPSHOT", "[set its due date]"],
+        ["7.2.0-SNAPSHOT", "[Set its due date]"],
       ]) {
         await runAction(entry, inputs(version), {
           GITHUB_API_URL: fake.url,
@@ -515,6 +632,32 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         });
         expect(fs.readFileSync(summary, "utf8")).toContain(expected);
       }
+    });
+
+    it("says in the summary what the kind of the branch needs", async () => {
+      const summary = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), "summary-")),
+        "summary.md",
+      );
+      await runAction(entry, inputs("7.0.9-SNAPSHOT", { kind: "lts" }), {
+        GITHUB_API_URL: fake.url,
+        GITHUB_STEP_SUMMARY: summary,
+      });
+      const text = fs.readFileSync(summary, "utf8");
+      expect(text).toContain("`Release Train: 2026.11.19`");
+      expect(text).not.toContain("Set its due date");
+    });
+
+    it("ends with the notice No release, and not an error, for a release that is not the next one", async () => {
+      const result = await runAction(
+        entry,
+        inputs("7.1.0-SNAPSHOT", { "release-only": "true" }),
+        { GITHUB_API_URL: fake.url },
+      );
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain("::notice title=No release::");
+      expect(result.outputs.found).toBe("false");
+      expect(result.outputs["no-release"]).toBe("true");
     });
 
     it("fails with an error that GitHub shows", async () => {
@@ -570,6 +713,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         expect(result.stdout).toContain("so nothing is built");
         expect(result.outputs).toEqual({
           found: "false",
+          "no-release": "false",
           "release-version": "",
           "release-train": "",
           "due-date": "",
@@ -601,3 +745,163 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
     });
   },
 );
+
+describe("create-missing", () => {
+  let fake;
+  beforeEach(async () => {
+    fake = await startFakeGitHub();
+  });
+  afterEach(() => fake.close());
+  const octokit = () => createOctokit({ baseUrl: fake.url });
+
+  it("does not create anything unless told to", async () => {
+    const result = await run(
+      { snapshotVersion: "7.0.9-SNAPSHOT", milestoneRepository: REPO },
+      { octokit: octokit() },
+    );
+    expect(result.found).toBe(false);
+    expect(fake.created).toEqual([]);
+  });
+
+  it.each(["frozen", "lts"])(
+    "creates the milestone with a title only, and finds nothing to build (%s)",
+    async (kind) => {
+      const result = await run(
+        {
+          snapshotVersion: "7.0.9-SNAPSHOT",
+          milestoneRepository: REPO,
+          createMissing: true,
+          kind,
+        },
+        { octokit: octokit() },
+      );
+      expect(result).toMatchObject({
+        found: false,
+        created: true,
+        notice: "Milestone created",
+      });
+      expect(result.message).toContain(
+        `Created the milestone 7.0.9 in ${REPO}`,
+      );
+      expect(fake.created).toMatchObject([
+        { repository: REPO, title: "7.0.9", due_on: null, description: null },
+      ]);
+      expect(fake.requests.at(-1).body).toEqual({ title: "7.0.9" });
+    },
+  );
+
+  it("creates the milestone of a hotfix and goes on with it", async () => {
+    const result = await run(
+      {
+        snapshotVersion: "7.0.9.1-SNAPSHOT",
+        milestoneRepository: REPO,
+        createMissing: true,
+        requireDueDate: false,
+        kind: "active",
+      },
+      { octokit: octokit() },
+    );
+    expect(result).toMatchObject({
+      found: true,
+      created: true,
+      releaseVersion: "7.0.9.1",
+      dueDate: "",
+      releaseTrain: "",
+    });
+    expect(fake.created).toHaveLength(1);
+  });
+
+  it("creates the GA milestone of a .0 version that has none open", async () => {
+    const result = await run(
+      {
+        snapshotVersion: "7.7.0-SNAPSHOT",
+        milestoneRepository: REPO,
+        createMissing: true,
+      },
+      { octokit: octokit() },
+    );
+    expect(result.created).toBe(true);
+    expect(fake.created[0].title).toBe("7.7.0");
+  });
+
+  it("does not create a milestone that exists", async () => {
+    const result = await run(
+      {
+        snapshotVersion: "7.0.1-SNAPSHOT",
+        milestoneRepository: REPO,
+        createMissing: true,
+      },
+      { octokit: octokit() },
+    ).catch((error) => error);
+    expect(fake.created).toEqual([]);
+    expect(result).not.toHaveProperty("created", true);
+  });
+
+  it("does not create a .0 milestone that is closed", async () => {
+    const closed = fixture.find(
+      (m) => m.state === "closed" && m.title.endsWith(".0"),
+    );
+    if (!closed) {
+      return;
+    }
+    const result = await run(
+      {
+        snapshotVersion: `${closed.title}-SNAPSHOT`,
+        milestoneRepository: REPO,
+        createMissing: true,
+      },
+      { octokit: octokit() },
+    );
+    expect(result.found).toBe(false);
+    expect(fake.created).toEqual([]);
+  });
+});
+
+describe("createdMilestoneSummary", () => {
+  const milestone = { html_url: "https://github.com/acme/w/milestone/9" };
+  it("asks for the date of a train for a frozen version", () => {
+    expect(
+      createdMilestoneSummary({
+        candidate: "7.0.1",
+        repository: "acme/w",
+        milestone,
+        kind: "frozen",
+      }),
+    ).toBe(
+      [
+        "### 7.0.1 is not in a release train yet",
+        "",
+        "The milestone [7.0.1](https://github.com/acme/w/milestone/9) was created in acme/w, with no due date, so nothing was built.",
+        "",
+        "To add it to a release train:",
+        "1. [Set its due date](https://github.com/acme/w/milestone/9/edit) to the date of a release train (for example 2026-11-19).",
+        "2. Run the workflow again.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("asks for the release train line for an LTS version, and not for a due date", () => {
+    const summary = createdMilestoneSummary({
+      candidate: "6.5.12",
+      repository: "acme/w-commercial",
+      milestone,
+      kind: "lts",
+    });
+    expect(summary).toContain("with no release train, so nothing was built");
+    expect(summary).toContain("`Release Train: 2026.11.19`");
+    expect(summary).not.toContain("Set its due date");
+  });
+
+  it("only records the milestone of a hotfix", () => {
+    const summary = createdMilestoneSummary({
+      candidate: "7.0.1.1",
+      repository: "acme/w-commercial",
+      milestone,
+      kind: "active",
+    });
+    expect(summary).toContain("### Milestone 7.0.1.1 created");
+    expect(summary).toContain("OSS version 7.0.1");
+    expect(summary).not.toContain("Run the workflow again");
+  });
+});

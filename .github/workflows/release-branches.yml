@@ -37,15 +37,20 @@ name: release-branches
 #
 # The milestone of the release (in the OSS repository, or for a hotfix in the commercial one)
 # is looked for in the plan job, before anything is built. A version whose milestone does not
-# exist ends the run with the notice No milestone, and builds nothing.
+# exist is created, with a title and nothing else (no due date, no Release Train line). A hotfix
+# goes on once it has a train (the due date of its OSS milestone); a frozen or long-term support
+# version has none, so the run ends with the notice Milestone created and builds nothing: the
+# summary says what to set for the kind of the branch. A milestone that exists, but is not in a
+# release train (no due date, or for a long-term support version no Release Train line), fails
+# the run, and its summary says what to change.
 #
 # What the release train asks for is read from the release train repository, from the
 # branch of the date that the milestone of the release is due (for a hotfix, the milestone of the
 # release it fixes in the OSS repository: its own due date is its commercial availability, after
-# the train that builds it). The milestone of a hotfix or of a long-term support version in the
-# commercial repository may name its train instead, with a line of its description (Release
-# Train: 2026.10.22): a long-term support version has no other way, as it is due on the
-# commercial availability of the train, which is not the date of the train. If there is none, the
+# the train that builds it). The milestone of a long-term support version in the commercial
+# repository names its train with a line of its description (Release Train: 2026.10.22): it has
+# no other way, as it is due on the commercial availability of the train, which is not the date
+# of the train. Only a commercial version names its train. If the train does not exist, the
 # branches are built without the dependency updates. A release that is ready in the
 # train is not changed: the run fails, and says what to do.
 #
@@ -119,7 +124,7 @@ jobs:
         uses: spring-io/spring-release-actions/compute-version@3f7412aeec60ad13127b2a536a1b19a2803a5b81 # 0.0.8
       - name: Decide what to build
         id: plan
-        uses: spring-io/spring-security-actions/plan-release-branches@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/plan-release-branches@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           ref-name: ${{ github.ref_name }}
           version: ${{ steps.version.outputs.version }}
@@ -130,7 +135,7 @@ jobs:
       - name: Compare the active embargoed branch with the frozen one
         id: compare
         if: steps.plan.outputs.kind == 'active' && steps.plan.outputs.release == 'true'
-        uses: spring-io/spring-security-actions/compare-branches@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/compare-branches@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           base: ${{ steps.plan.outputs.frozen-branch }}
 
@@ -142,44 +147,72 @@ jobs:
       - name: Name the repositories
         id: repositories
         if: steps.plan.outputs.release == 'true' && (steps.plan.outputs.kind != 'active' || steps.compare.outputs.different == 'true')
-        uses: spring-io/spring-security-actions/name-repositories@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/name-repositories@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
       # A hotfix is in the release train of its OSS equivalent: the train that the milestone of the
       # release it fixes (7.0.1 for 7.0.1.1) is due. The due date of the milestone of the hotfix is
       # when it is commercially available, and that is after the train that builds it. Like the
-      # milestone of a release, if it does not exist, nothing is built, and the run ends with a notice.
+      # milestone of a release, if it does not exist, nothing is built, and the run ends with a notice and
+      # a summary that says to create it, with a due date on the date of a train. Without a due date, it fails.
       # The hotfix of a .0 version is only built for the GA (7.2.0), and not for 7.2.0-RC1, so this is
-      # looked at before the milestone of the hotfix, which is not asked for if there is none.
+      # looked at before the milestone of the hotfix, which is not created if there is no release.
+      # The milestone of the hotfix is created even if the OSS milestone has no due date, so this
+      # step does not stop the job: the step after the milestone of the hotfix does, and says why.
       - name: Work out the date of the release train of the hotfix
         id: train-milestone
+        continue-on-error: true
         if: steps.plan.outputs.kind == 'active' && steps.plan.outputs.release == 'true' && steps.compare.outputs.different == 'true'
-        uses: spring-io/spring-security-actions/compute-release-version@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/compute-release-version@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           snapshot-version: ${{ format('{0}-SNAPSHOT', steps.plan.outputs.hotfix-of-version) }}
           milestone-repository: ${{ steps.repositories.outputs.oss-repository }}
           milestone-token: ${{ secrets.GITHUB_TOKEN }}
           release-only: "true"
           fail-if-missing: "false"
-      # If the milestone does not exist (a version that is not planned, or a hotfix whose milestone
-      # is not created yet), nothing is built: the run ends with a notice, and the build job is skipped.
+          kind: ${{ steps.plan.outputs.kind }}
+      # If the milestone does not exist, it is created, with a title and nothing else: no due date
+      # and no release train. That of a hotfix is not in a train until the OSS milestone is, and
+      # its due date is set from it, so it is created whatever the OSS milestone has. Any other has
+      # nothing to build until it is in a train: the run ends with a notice, the summary says what to
+      # set for the kind, and the build job is skipped.
       - name: Work out the release version
         id: release
-        if: steps.plan.outputs.release == 'true' && (steps.plan.outputs.kind != 'active' || steps.compare.outputs.different == 'true') && steps.train-milestone.outputs.found != 'false'
-        uses: spring-io/spring-security-actions/compute-release-version@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        if: steps.plan.outputs.release == 'true' && (steps.plan.outputs.kind != 'active' || steps.compare.outputs.different == 'true') && steps.train-milestone.outputs.no-release != 'true'
+        uses: spring-io/spring-security-actions/compute-release-version@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           snapshot-version: ${{ steps.plan.outputs.base-version }}
           milestone-repository: ${{ steps.plan.outputs.kind != 'frozen' && github.repository || steps.repositories.outputs.oss-repository }}
-          milestone-token: ${{ steps.plan.outputs.kind != 'frozen' && secrets.RELEASE_AUTOMATION_TOKEN || secrets.GITHUB_TOKEN }}
+          milestone-token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+          create-missing: "true"
           fail-if-missing: "false"
+          kind: ${{ steps.plan.outputs.kind }}
           # The due date of a hotfix is corrected to the commercial availability of its train
           require-due-date: ${{ steps.plan.outputs.kind != 'active' }}
           # The milestone of a long-term support version has no train that its due date can name:
           # its description does (Release Train: 2026.10.22), and its due date is set from that train
           require-release-train: ${{ steps.plan.outputs.kind == 'lts' }}
+      # Every OSS version is a milestone of the commercial repository too, due when the OSS one is,
+      # and following it if that changes: the issues of the fixes that only customers get (for a CVE)
+      # need the milestone of the version. It is made once the OSS milestone has a due date.
+      - name: Make the milestone of the OSS version in the commercial repository
+        if: steps.plan.outputs.kind == 'frozen' && steps.release.outputs.found == 'true'
+        uses: spring-io/spring-security-actions/ensure-milestone@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
+        with:
+          repository: ${{ github.repository }}
+          milestone: ${{ steps.release.outputs.release-version }}
+          due-date: ${{ steps.release.outputs.due-date }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      # The milestone of the hotfix is there now. Without a due date on the OSS milestone that it
+      # fixes, the hotfix has no release train, and the run stops: its summary says to set it.
+      - name: Stop if the OSS milestone of the hotfix is not in a release train
+        if: steps.train-milestone.outcome == 'failure'
+        run: |
+          echo "::error title=Not in a release train::The OSS milestone of the release that the hotfix fixes is not in a release train: see the summary"
+          exit 1
       # A frozen or active embargoed branch is for a generation that is still OSS when the release
       # is made public (the date of its train). Once it is commercial, it has one embargoed/lts branch.
       - name: Check that the generation is still supported as OSS
         if: steps.plan.outputs.kind != 'lts' && steps.release.outputs.found == 'true' && steps.train-milestone.outputs.found != 'false'
-        uses: spring-io/spring-security-actions/check-oss-support@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/check-oss-support@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           project: ${{ steps.repositories.outputs.project }}
           version: ${{ steps.release.outputs.release-version }}
@@ -210,14 +243,14 @@ jobs:
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
           fetch-depth: 0
       - name: Set the git identity
-        uses: spring-io/spring-security-actions/git-identity@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/git-identity@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
       # The train is the one that the description of the milestone names (Release Train: 2026.10.22),
       # which a long-term support version needs. Without one, it is the one that the milestone of the
       # release is due (for a hotfix, the milestone of the release it fixes). If it has not been
       # created, that is said in a notice, and the branches are built without the dependencies.
       - name: Read the release train
         id: train
-        uses: spring-io/spring-security-actions/load-train@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/load-train@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           release-train-repository: ${{ inputs.release-train-repository || 'spring-io/release-train' }}
           branch: ${{ needs.plan.outputs.train-branch }}
@@ -227,7 +260,7 @@ jobs:
       # availability of the train: it is corrected here if it is not, or if it has none.
       - name: Set the due date of the milestone
         if: env.KIND != 'frozen' && steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/align-milestone@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/align-milestone@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           train-file: ${{ steps.train.outputs.train-file }}
           train-branch: ${{ steps.train.outputs.branch }}
@@ -237,7 +270,7 @@ jobs:
       - name: Stop if the release is ready already
         id: not-ready
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/check-not-ready@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/check-not-ready@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           train-file: ${{ steps.train.outputs.train-file }}
           project: ${{ needs.plan.outputs.project }}
@@ -253,7 +286,7 @@ jobs:
       # long-term support version is a plain -SNAPSHOT, and only OSS has an internal one: it
       # publishes a regular snapshot without the fixes for vulnerabilities that the commercial one has.
       - name: Start the snapshot branch
-        uses: spring-io/spring-security-actions/start-branch@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/start-branch@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           branch: ${{ env.SNAPSHOT_BRANCH }}
           from: ${{ github.sha }}
@@ -263,24 +296,24 @@ jobs:
       - name: Merge the snapshot of the release into the snapshot of the hotfix
         id: merge-snapshot
         if: env.KIND == 'active'
-        uses: spring-io/spring-security-actions/merge-release@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/merge-release@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           release: ${{ env.HOTFIX_OF_SNAPSHOT }}
       - name: Apply the commercial license
         if: env.KIND == 'active'
-        uses: spring-io/spring-security-actions/apply-commercial-license@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/apply-commercial-license@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           commit-message: Commercial changes for ${{ needs.plan.outputs.release-version }}
       - name: Set the version of the snapshot
         if: env.KIND != 'lts'
-        uses: spring-io/spring-security-actions/set-version@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/set-version@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           version: ${{ env.SNAPSHOT_VERSION }}
           message: Set the version to ${{ env.SNAPSHOT_VERSION }}
       - name: Work out the snapshots of the dependencies
         id: snapshot-versions
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/map-train-versions@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/map-train-versions@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           release-versions-file: ${{ steps.train.outputs.release-versions-file }}
           train-file: ${{ steps.train.outputs.train-file }}
@@ -289,7 +322,7 @@ jobs:
           hotfix-suffix: -SNAPSHOT
       - name: Update the dependencies of the snapshot
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/update-versions@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/update-versions@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           versions: ${{ steps.snapshot-versions.outputs.versions }}
           require-issue: "false"
@@ -302,25 +335,25 @@ jobs:
       # dependencies of the release train, each with an issue and a commit, and the version of the
       # release, last.
       - name: Start the release branch
-        uses: spring-io/spring-security-actions/start-branch@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/start-branch@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           branch: release/${{ needs.plan.outputs.release-version }}
           from: ${{ github.sha }}
       - name: Merge the release into the hotfix
         id: merge-release
         if: env.KIND == 'active'
-        uses: spring-io/spring-security-actions/merge-release@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/merge-release@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           release: ${{ env.HOTFIX_OF_RELEASE }}
       - name: Apply the commercial license to the hotfix
         if: env.KIND == 'active'
-        uses: spring-io/spring-security-actions/apply-commercial-license@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/apply-commercial-license@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           commit-message: Commercial changes for ${{ needs.plan.outputs.release-version }}
       - name: Work out the versions of the dependencies
         id: versions
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/map-train-versions@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/map-train-versions@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           release-versions-file: ${{ steps.train.outputs.release-versions-file }}
           train-file: ${{ steps.train.outputs.train-file }}
@@ -330,7 +363,7 @@ jobs:
       - name: Make sure that there are issues
         id: issues
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/ensure-dependency-issues@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/ensure-dependency-issues@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           versions: ${{ steps.versions.outputs.versions }}
           repository: ${{ env.KIND != 'frozen' && github.repository || needs.plan.outputs.oss-repository }}
@@ -339,11 +372,11 @@ jobs:
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Update the dependencies of the release
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/update-versions@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/update-versions@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           versions: ${{ steps.issues.outputs.updates }}
       - name: Set the version of the release
-        uses: spring-io/spring-security-actions/set-version@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/set-version@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           version: ${{ needs.plan.outputs.release-version }}
           message: Release ${{ needs.plan.outputs.release-version }}
@@ -351,7 +384,7 @@ jobs:
       # Both at once, or none: so a failure never leaves one of them built and not the other.
       # It is forced, because the branches are built again from the pushed commit every time.
       - name: Push the branches
-        uses: spring-io/spring-security-actions/push-branches@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/push-branches@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           kind: ${{ env.KIND }}
           oss-repository: ${{ needs.plan.outputs.oss-repository }}
@@ -376,7 +409,7 @@ jobs:
       # release, the one that was set above for a hotfix. A release that has joined is not joined
       # again, so a run by hand after the due date of a milestone was set joins what was missed.
       - name: Join the release train
-        uses: spring-io/spring-security-actions/join-train@e9e21a5ad318fcd83319706b857aabc8848e4cb5 # unreleased
+        uses: spring-io/spring-security-actions/join-train@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
           release-train-repository: ${{ inputs.release-train-repository || 'spring-io/release-train' }}
           train-branch: ${{ steps.train.outputs.branch }}

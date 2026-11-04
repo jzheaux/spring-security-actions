@@ -17,6 +17,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`compare-branches`](compare-branches/README.md) | Whether a branch has changes that another branch lacks: a hotfix is only built for an active embargoed branch that differs from the frozen one. |
 | [`compute-release-version`](compute-release-version/README.md) | The release version of a snapshot version, and its due date, from the milestones of a repository. |
 | [`ensure-dependency-issues`](ensure-dependency-issues/README.md) | An issue for every dependency update, in a milestone. It makes the ones that are missing. |
+| [`ensure-milestone`](ensure-milestone/README.md) | Creates a milestone in a repository if it has none of that title, with no due date. |
 | [`git-identity`](git-identity/README.md) | Sets who commits: `github-actions[bot]` by default. |
 | [`join-train`](join-train/README.md) | Joins a release to the release train, by running the workflow Release Train - Join of the project on the release branch. |
 | [`load-train`](load-train/README.md) | Reads the release train of a date. |

@@ -18,6 +18,7 @@ export const defaultTrains = path.join(here, "..", "fixtures", "train");
  *
  *   GET  /repos/<owner>/<repo>                              the repository exists
  *   GET  /repos/<owner>/<repo>/milestones?state=&page=      the milestones
+ *   POST /repos/<owner>/<repo>/milestones                   a new milestone (in `created`)
  *   GET  /repos/<owner>/<repo>/branches/<branch>            a branch of the trains
  *   GET  /repos/<owner>/<repo>/contents/<path>?ref=<branch> a file of a branch
  *   GET  /repos/<owner>/<repo>/issues?milestone=&state=     the issues (and pull requests)
@@ -46,6 +47,7 @@ export async function startFakeGitHub({
   const fake = {
     issues: [...issues],
     requests,
+    created: [],
     createFailure: undefined,
     lag: 0,
     listRequests: 0,
@@ -110,6 +112,26 @@ export async function startFakeGitHub({
             html_url: `https://github.com/${owner}/${repo}/milestone/${m.number}`,
           })),
       );
+    }
+
+    if (rest === "/milestones" && request.method === "POST") {
+      if (!body?.title) {
+        return send(422, { message: "Validation Failed: title is missing" });
+      }
+      const number = Math.max(0, ...allMilestones.map((m) => m.number)) + 1;
+      const milestone = {
+        number,
+        title: body.title,
+        state: "open",
+        description: body.description ?? null,
+        due_on: body.due_on ?? null,
+      };
+      allMilestones.push(milestone);
+      fake.created.push({ repository: `${owner}/${repo}`, ...milestone });
+      return send(201, {
+        ...milestone,
+        html_url: `https://github.com/${owner}/${repo}/milestone/${number}`,
+      });
     }
 
     if (rest === "/issues" && request.method === "GET") {
