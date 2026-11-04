@@ -36584,12 +36584,23 @@ async function execute(action) {
 
 
 
+// A milestone is due at noon UTC, which is the same day in every time zone.
+const NOON = "T12:00:00Z";
+
 /**
- * Makes sure that a repository has a milestone of a title: an open or a closed one is
- * enough, and is not changed. If there is none, it is created with the title and nothing
- * else: no due date, and no description. It returns { created, url }.
+ * Makes sure that a repository has a milestone of a title, open or closed. If there is
+ * none, it is created with the title, and the due date if there is one: no description.
+ * With a due date (YYYY-MM-DD), the milestone is due that day, at noon UTC: one that is due
+ * another day, or has none, is changed, so that it follows the milestone that the date is of.
+ * Without one, a milestone that exists is not changed. It returns { created, changed, url }.
  */
-async function run({ repository, milestone }, { octokit }) {
+async function run(
+  { repository, milestone, dueDate = "" },
+  { octokit },
+) {
+  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+    throw new Error(`"${dueDate}" is not a date: expected YYYY-MM-DD`);
+  }
   const { owner, repo } = parseRepository(repository);
   const milestones = await call(
     `Reading the milestones of ${repository}`,
@@ -36602,26 +36613,56 @@ async function run({ repository, milestone }, { octokit }) {
   );
   const found = milestones.find((m) => m.title === milestone);
   if (found) {
-    return { created: false, url: found.html_url ?? "" };
+    const previous = found.due_on ? found.due_on.slice(0, 10) : "";
+    if (!dueDate || previous === dueDate) {
+      return { created: false, changed: false, url: found.html_url ?? "" };
+    }
+    await call(
+      `Setting the due date of the milestone ${milestone} of ${repository}`,
+      octokit.rest.issues.updateMilestone({
+        owner,
+        repo,
+        milestone_number: found.number,
+        due_on: `${dueDate}${NOON}`,
+      }),
+    );
+    return {
+      created: false,
+      changed: true,
+      previous,
+      url: found.html_url ?? "",
+    };
   }
   const { data } = await call(
     `Creating the milestone ${milestone} of ${repository}`,
-    octokit.rest.issues.createMilestone({ owner, repo, title: milestone }),
+    octokit.rest.issues.createMilestone({
+      owner,
+      repo,
+      title: milestone,
+      ...(dueDate && { due_on: `${dueDate}${NOON}` }),
+    }),
   );
-  return { created: true, url: data.html_url ?? "" };
+  return { created: true, changed: false, url: data.html_url ?? "" };
 }
 
 async function main() {
   const repository = getInput("repository", { required: true });
   const milestone = getInput("milestone", { required: true });
+  const dueDate = getInput("due-date");
   const octokit = createOctokit({ token: getInput("token") });
-  const result = await run({ repository, milestone }, { octokit });
+  const result = await run({ repository, milestone, dueDate }, { octokit });
   setOutput("created", String(result.created));
+  setOutput("changed", String(result.changed));
   setOutput("milestone-url", result.url);
   if (result.created) {
     notice(
-      `Created the milestone ${milestone} in ${repository}, with no due date`,
+      `Created the milestone ${milestone} in ${repository}, ${dueDate ? `due ${dueDate}` : "with no due date"}`,
       { title: "Milestone created" },
+    );
+  } else if (result.changed) {
+    notice(
+      `The milestone ${milestone} of ${repository} was due ${result.previous || "on no date"} and is now due ${dueDate}, as the milestone that it follows`,
+      { title: "Milestone due date" },
     );
   } else {
     info(`${repository} has the milestone ${milestone} already`);

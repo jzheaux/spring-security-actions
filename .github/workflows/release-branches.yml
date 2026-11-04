@@ -190,15 +190,16 @@ jobs:
           # The milestone of a long-term support version has no train that its due date can name:
           # its description does (Release Train: 2026.10.22), and its due date is set from that train
           require-release-train: ${{ steps.plan.outputs.kind == 'lts' }}
-      # Every OSS version is a milestone of the commercial repository too, with no due date: the
-      # issues of the fixes that only customers get (for a CVE) need the milestone of the version.
-      # Once the OSS milestone is in a release train, so that it is the release that is built.
+      # Every OSS version is a milestone of the commercial repository too, due when the OSS one is,
+      # and following it if that changes: the issues of the fixes that only customers get (for a CVE)
+      # need the milestone of the version. It is made once the OSS milestone has a due date.
       - name: Make the milestone of the OSS version in the commercial repository
         if: steps.plan.outputs.kind == 'frozen' && steps.release.outputs.found == 'true'
         uses: spring-io/spring-security-actions/ensure-milestone@d3f2bd8909fed53f20d6abb410e68596bdbe9856 # unreleased
         with:
           repository: ${{ github.repository }}
           milestone: ${{ steps.release.outputs.release-version }}
+          due-date: ${{ steps.release.outputs.due-date }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       # The milestone of the hotfix is there now. Without a due date on the OSS milestone that it
       # fixes, the hotfix has no release train, and the run stops: its summary says to set it.

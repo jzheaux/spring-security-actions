@@ -1,5 +1,5 @@
 name: "ensure-milestone"
-description: "Creates a milestone in a repository if it has none of that title, with a title and nothing else (no due date, no description)"
+description: "Creates a milestone in a repository if it has none of that title, and sets its due date if one is given"
 
 inputs:
   repository:
@@ -8,6 +8,9 @@ inputs:
   milestone:
     description: "The title of the milestone, for example `7.0.1`."
     required: true
+  due-date:
+    description: "The due date of the milestone, YYYY-MM-DD, at noon UTC. A milestone that is due another day, or has none, is changed to it. Without it, a milestone that exists is not changed, and one that is created has none."
+    required: false
   token:
     description: "A token that may write the milestones of the repository."
     required: true
@@ -15,6 +18,8 @@ inputs:
 outputs:
   created:
     description: "true if the milestone was created, false if the repository had it already (open or closed)."
+  changed:
+    description: "true if the due date of a milestone that existed was changed to due-date."
   milestone-url:
     description: "The URL of the milestone on GitHub."
 
