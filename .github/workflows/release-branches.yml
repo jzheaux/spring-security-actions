@@ -37,9 +37,10 @@ name: release-branches
 #
 # The milestone of the release (in the OSS repository, or for a hotfix in the commercial one)
 # is looked for in the plan job, before anything is built. A version whose milestone does not
-# exist, or is not in a release train (it has no due date, or for a long-term support version no
-# Release Train line), fails the run, and nothing is built: the summary of the run says what to
-# create or change for the kind of the branch.
+# exist ends the run with the notice No milestone, and builds nothing: the summary of the run says
+# what to create for the kind of the branch. A milestone that exists, but is not in a release train
+# (it has no due date, or for a long-term support version no Release Train line), fails the run,
+# and its summary says what to change.
 #
 # What the release train asks for is read from the release train repository, from the
 # branch of the date that the milestone of the release is due (for a hotfix, the milestone of the
@@ -148,8 +149,8 @@ jobs:
       # A hotfix is in the release train of its OSS equivalent: the train that the milestone of the
       # release it fixes (7.0.1 for 7.0.1.1) is due. The due date of the milestone of the hotfix is
       # when it is commercially available, and that is after the train that builds it. Like the
-      # milestone of a release, if it does not exist or has no due date, the run fails, and the summary
-      # says to create it, with a due date on the date of a train.
+      # milestone of a release, if it does not exist, nothing is built, and the run ends with a notice and
+      # a summary that says to create it, with a due date on the date of a train. Without a due date, it fails.
       # The hotfix of a .0 version is only built for the GA (7.2.0), and not for 7.2.0-RC1, so this is
       # looked at before the milestone of the hotfix, which is not asked for if there is none.
       - name: Work out the date of the release train of the hotfix
@@ -161,9 +162,11 @@ jobs:
           milestone-repository: ${{ steps.repositories.outputs.oss-repository }}
           milestone-token: ${{ secrets.GITHUB_TOKEN }}
           release-only: "true"
+          fail-if-missing: "false"
           kind: ${{ steps.plan.outputs.kind }}
       # If the milestone does not exist (a version that is not planned, or a hotfix whose milestone
-      # is not created yet), the run fails, and the summary says how to create it for the kind.
+      # is not created yet), nothing is built: the run ends with a notice, the summary says how to
+      # create it for the kind, and the build job is skipped.
       - name: Work out the release version
         id: release
         if: steps.plan.outputs.release == 'true' && (steps.plan.outputs.kind != 'active' || steps.compare.outputs.different == 'true') && steps.train-milestone.outputs.found != 'false'
@@ -172,6 +175,7 @@ jobs:
           snapshot-version: ${{ steps.plan.outputs.base-version }}
           milestone-repository: ${{ steps.plan.outputs.kind != 'frozen' && github.repository || steps.repositories.outputs.oss-repository }}
           milestone-token: ${{ steps.plan.outputs.kind != 'frozen' && secrets.RELEASE_AUTOMATION_TOKEN || secrets.GITHUB_TOKEN }}
+          fail-if-missing: "false"
           kind: ${{ steps.plan.outputs.kind }}
           # The due date of a hotfix is corrected to the commercial availability of its train
           require-due-date: ${{ steps.plan.outputs.kind != 'active' }}
