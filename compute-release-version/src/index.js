@@ -40,55 +40,92 @@ class NoReleaseTrainError extends Error {
 const SERVER = () =>
   (process.env.GITHUB_SERVER_URL || "https://github.com").replace(/\/+$/, "");
 
-const TRAIN_HELP =
-  "a due date that matches a release train: the name of its branch in the release train repository is its date (the train 2026.11.19 is due 2026-11-19)";
+const KINDS = ["frozen", "active", "lts"];
+
+const numbered = (steps) => steps.map((step, i) => `${i + 1}. ${step}`);
 
 /**
  * The summary for a release that cannot join a release train yet, because its milestone
- * does not exist or has no due date: what to create or change, with links to do it. A
- * hotfix (7.0.1.1) is released from the commercial repository, so its milestone is
- * created there, and the summary names the OSS version it is a hotfix of. Its due date is
- * not the date of the train, as a release's is, but the commercial general availability of
- * the train of the OSS version, which the workflow sets.
+ * does not exist, has no due date, or (a long-term support version) does not name its train:
+ * what to create or change, with links to do it. What correlates a milestone with a train
+ * depends on the kind of the branch that is built:
+ *
+ * - frozen: the milestone is in the OSS repository, and its due date is the date of the train.
+ * - lts: the milestone is in the commercial repository, and its description names the train
+ *   (Release Train: 2026.11.19), as a due date cannot: it is the commercial general
+ *   availability of the train, which the workflow sets. Only commercial versions name a train.
+ * - active: a hotfix (7.0.1.1) is released from the commercial repository, and is in the train
+ *   of the OSS version it fixes (7.0.1): the milestone of that version in the OSS repository
+ *   gives the train, with its due date. The milestone of the hotfix needs to exist, and any due
+ *   date will do, as the workflow sets it. The summary is for the OSS milestone (a version with
+ *   three numbers) or for the milestone of the hotfix (four numbers).
  */
-export function noTrainSummary({ candidate, repository, milestone }) {
-  const hotfix = /^\d+\.\d+\.\d+\.\d+$/.test(candidate)
-    ? candidate.slice(0, candidate.lastIndexOf("."))
-    : undefined;
+export function noTrainSummary({
+  candidate,
+  repository,
+  milestone,
+  kind = "frozen",
+}) {
+  if (!KINDS.includes(kind)) {
+    throw new Error(`Unknown kind "${kind}": expected ${KINDS.join(", ")}`);
+  }
+  const create = `[create the milestone ${candidate}](${SERVER()}/${repository}/milestones/new)`;
+  const edit = (text) => `[${text}](${milestone?.html_url}/edit)`;
   const lines = [`### ${candidate} is not in a release train`, ""];
-  if (hotfix) {
-    // A hotfix is in the train of the OSS version that it fixes, which its title says, and
-    // its milestone is due on the commercial general availability of that train: the
-    // workflow sets it, so the date that it is created with does not matter.
+  const finish = (...steps) => {
+    lines.push("To add it to a release train:", ...numbered(steps), "");
+    return lines.join("\n");
+  };
+  const again = "Run the workflow again.";
+
+  if (kind === "lts") {
     lines.push(
       milestone
-        ? `The milestone ${candidate} of ${repository} has no due date.`
+        ? `The description of the milestone ${candidate} of ${repository} does not name its release train.`
         : `${repository} has no milestone ${candidate}.`,
       "",
+    );
+    return finish(
       milestone
-        ? `Its due date is set from the release train when the workflow runs again.`
-        : `To build the hotfix, [create the milestone ${candidate}](${SERVER()}/${repository}/milestones/new) in ${repository}, and run the workflow again.`,
-      "",
-      `The title puts ${candidate} in the release train of the OSS version ${hotfix}: the train that the milestone ${hotfix} of the OSS repository is due. Its due date is the commercial general availability of that train, which the workflow sets (for example, that of the train 2026.11.19 is 2026-12-24), so any date will do.`,
-      "",
-      `${candidate} is a hotfix of the OSS version ${hotfix}, and is released from the commercial repository: its milestone is in ${repository}, not in the OSS repository.`,
-    );
-    return `${lines.join("\n")}\n`;
-  }
-  if (milestone) {
-    lines.push(
-      `The milestone ${candidate} of ${repository} has no due date.`,
-      "",
-      `To add it to a release train, [set its due date](${milestone.html_url}/edit) to ${TRAIN_HELP}, and run the workflow again.`,
-    );
-  } else {
-    lines.push(
-      `${repository} has no milestone ${candidate}.`,
-      "",
-      `To add it to a release train, [create the milestone ${candidate}](${SERVER()}/${repository}/milestones/new) in ${repository} with ${TRAIN_HELP}, and run the workflow again.`,
+        ? `${edit("Edit the milestone")} and add a line \`Release Train: 2026.11.19\` to its description. The workflow sets its due date from the train.`
+        : `${create} in ${repository}, and add a line \`Release Train: 2026.11.19\` to its description. The workflow sets its due date from the train.`,
+      again,
     );
   }
-  return `${lines.join("\n")}\n`;
+
+  const trainDate = "the date of a release train (for example 2026-11-19)";
+  const missing = milestone
+    ? `The milestone ${candidate} of ${repository} has no due date.`
+    : `${repository} has no milestone ${candidate}.`;
+  // create the milestone, then give it a due date; or give the one that exists a due date
+  const dueDate = milestone
+    ? [`${edit("Set its due date")} to ${trainDate}.`]
+    : [`${create} in ${repository}.`, `Set its due date to ${trainDate}.`];
+
+  if (kind === "active" && /^\d+\.\d+\.\d+\.\d+$/.test(candidate)) {
+    const fixed = candidate.slice(0, candidate.lastIndexOf("."));
+    lines.push(
+      missing,
+      "",
+      `The hotfix ${candidate} is in the release train of the OSS version ${fixed}: the train in which the milestone ${fixed} of the OSS repository is due.`,
+      "",
+    );
+    return finish(
+      `${milestone ? `${edit("Set its due date")} to any date` : `${create} in ${repository}`}. Any due date will do, because the workflow sets it to the commercial general availability of the train (for example 2026-12-24).`,
+      again,
+    );
+  }
+  if (kind === "active") {
+    lines.push(
+      missing,
+      "",
+      `A hotfix of ${candidate} is in the release train in which the milestone ${candidate} is due.`,
+      "",
+    );
+    return finish(...dueDate, again);
+  }
+  lines.push(missing, "");
+  return finish(...dueDate, again);
 }
 
 /**
@@ -277,6 +314,7 @@ export async function main() {
       core.getInput("require-release-train"),
       false,
     ),
+    kind: core.getInput("kind") || "frozen",
     failIfMissing: parseBoolean(
       "fail-if-missing",
       core.getInput("fail-if-missing"),
@@ -288,33 +326,34 @@ export async function main() {
   try {
     result = await run(inputs, { octokit });
   } catch (error) {
-    if (error instanceof NoReleaseTrainError) {
-      addSummary(
-        `### ${error.milestone.title} does not name its release train\n\nTo build it, [add a line to the description of the milestone](${error.milestone.html_url}/edit) that names the release train that it is in, for example \`Release Train: 2026.11.19\`, and run the workflow again. The due date of the milestone is set to the commercial general availability of that train.\n`,
-      );
-    }
-    if (error instanceof NoDueDateError) {
+    if (
+      error instanceof NoReleaseTrainError ||
+      error instanceof NoDueDateError
+    ) {
       addSummary(
         noTrainSummary({
           candidate: error.milestone.title,
           repository: inputs.milestoneRepository,
           milestone: error.milestone,
+          kind: inputs.kind,
         }),
       );
     }
     throw error;
   }
   if (!result.found) {
-    // a milestone that is there, but is not the release, is not one to add to a train
+    // a milestone that is there, but is not the release, is not one to add to a train, nor
+    // a failure: there is only nothing to build
     if (!result.notice) {
       addSummary(
         noTrainSummary({
           candidate: result.candidate,
           repository: inputs.milestoneRepository,
+          kind: inputs.kind,
         }),
       );
     }
-    if (inputs.failIfMissing) {
+    if (inputs.failIfMissing && !result.notice) {
       throw new Error(result.message);
     }
     core.notice(result.message, { title: result.notice ?? "No milestone" });

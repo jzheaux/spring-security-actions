@@ -23,8 +23,12 @@ inputs:
     description: "Whether the description of the milestone must name its release train, with a line `Release Train: 2026.11.19`: the release workflow requires it for a long-term support version. Set to false to allow it not to"
     required: false
     default: "false"
+  kind:
+    description: "The kind of branch that is built: frozen, active or lts. It decides what the summary tells to do when the milestone does not exist or is not in a release train: a due date for frozen (OSS) and active (the hotfix of an OSS version), the line `Release Train: 2026.11.19` of the description for lts (commercial)"
+    required: false
+    default: "frozen"
   fail-if-missing:
-    description: "Whether the action fails if the milestone does not exist. Set to false to end with a notice instead, and the output found set to false"
+    description: "Whether the action fails if the milestone does not exist. Set to false to end with a notice instead, and the output found set to false. The notice of release-only (No release) never fails"
     required: false
     default: "true"
 

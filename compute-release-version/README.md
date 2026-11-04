@@ -31,6 +31,7 @@ The name is the branch of the train in the release train repository. The rest of
 | `require-due-date` | no, `true` | Whether the milestone must have a due date. |
 | `release-only` | no, `false` | Whether a `.0` version is only found if its next release is the version itself (`7.2.0`), and not a milestone or a release candidate (`7.2.0-RC1`): the release workflow gives it for a hotfix, which is only made of the release itself. Otherwise it ends as if there were no milestone, with the notice **No release**, and `found` is `false`. |
 | `require-release-train` | no, `false` | Whether the description of the milestone must name its release train. If it does not, the action fails, and the summary says to add the line. |
+| `kind` | no, `frozen` | The kind of branch that is built: `frozen`, `active` or `lts`. It decides what the summary tells to do: for `frozen` (OSS milestone) and `active` (the OSS milestone of the version that a hotfix fixes, or the milestone of the hotfix in the commercial repository) give a due date on the date of a train; for `lts` (commercial milestone) add the line `Release Train: <train>` to its description. Only a commercial version names its train. |
 | `fail-if-missing` | no, `true` | Whether the action fails if the milestone does not exist. If `false`, it ends successfully with the notice **No milestone**, which says which milestone is missing and in which repository, and the output `found` is `false`. A milestone that exists without a due date is still an error. |
 
 ## Outputs
@@ -51,7 +52,11 @@ The name is the branch of the train in the release train repository. The rest of
 - the description names a release train that is not `YYYY.MM.DD`, or two different ones, or (with `require-release-train`) none
 - GitHub answers with an error. A `404` means the repository does not exist, or the token cannot read it.
 
-When the milestone does not exist, or has no due date, the summary of the step says how to add the version to a release train: a link to create the milestone (GitHub cannot prefill its title, so the text names it) or to edit its due date, which must match the date of a train. For a hotfix (`7.0.1.1`) it also names the OSS version it is a hotfix of (`7.0.1`), and says the milestone is in the commercial repository.
+When the milestone does not exist, has no due date, or (with `require-release-train`) does not name its train, the step fails, and its summary says how to add the version to a release train, for the `kind` of the branch:
+
+- `frozen`: create the milestone in the OSS repository (GitHub cannot prefill its title, so the text names it), or edit it, with a due date on the date of a train.
+- `lts`: create or edit the milestone in the commercial repository, with the line `Release Train: 2026.11.19` in its description. The workflow sets its due date from the train.
+- `active`: a hotfix (`7.0.1.1`) is in the train of the OSS version that it fixes (`7.0.1`), which the due date of the OSS milestone gives (the summary asks for that milestone, with a due date). The milestone of the hotfix is in the commercial repository, and any due date will do, as the workflow sets it.
 
 ## Secrets and permissions
 
