@@ -28625,6 +28625,7 @@ var __webpack_exports__ = {};
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
   RH: () => (/* binding */ candidateOf),
+  N8: () => (/* binding */ createdMilestoneSummary),
   iW: () => (/* binding */ main),
   WO: () => (/* binding */ noTrainSummary),
   p4: () => (/* binding */ releaseTrainOf),
@@ -36650,6 +36651,16 @@ function listMilestones(octokit, repository, state) {
   );
 }
 
+// A new milestone, with a title and nothing else: it is open, and has no due date or description.
+async function createMilestone(octokit, repository, title) {
+  const { owner, repo } = parseRepository(repository);
+  const { data } = await call(
+    `Creating the milestone ${title} of ${repository}`,
+    octokit.rest.issues.createMilestone({ owner, repo, title }),
+  );
+  return data;
+}
+
 /** The milestone exists, but has no due date: it carries what the summary links to. */
 class NoDueDateError extends Error {
   constructor(message, milestone) {
@@ -36757,6 +36768,51 @@ function noTrainSummary({
   return finish(...dueDate, again);
 }
 
+const isHotfix = (candidate) => /^\d+\.\d+\.\d+\.\d+$/.test(candidate);
+
+/**
+ * The summary for a milestone that was created because it did not exist. It has no due date
+ * and names no release train, so what is to be set depends on the kind of the branch, as for
+ * noTrainSummary. A hotfix milestone needs neither: its due date is set from the train of the
+ * OSS version, so the summary only says so, and the release goes on.
+ */
+function createdMilestoneSummary({
+  candidate,
+  repository,
+  milestone,
+  kind = "frozen",
+}) {
+  if (!KINDS.includes(kind)) {
+    throw new Error(`Unknown kind "${kind}": expected ${KINDS.join(", ")}`);
+  }
+  const link = `[${candidate}](${milestone.html_url})`;
+  const edit = (text) => `[${text}](${milestone.html_url}/edit)`;
+  if (kind === "active" && isHotfix(candidate)) {
+    const fixed = candidate.slice(0, candidate.lastIndexOf("."));
+    return [
+      `### Milestone ${candidate} created`,
+      "",
+      `The milestone ${link} was created in ${repository}. Its due date is set to the commercial general availability of the train of the OSS version ${fixed}.`,
+      "",
+    ].join("\n");
+  }
+  const what = kind === "lts" ? "no release train" : "no due date";
+  const steps =
+    kind === "lts"
+      ? `${edit("Edit the milestone")} and add a line \`Release Train: 2026.11.19\` to its description. The workflow sets its due date from the train.`
+      : `${edit("Set its due date")} to the date of a release train (for example 2026-11-19).`;
+  return [
+    `### ${candidate} is not in a release train yet`,
+    "",
+    `The milestone ${link} was created in ${repository}, with ${what}, so nothing was built.`,
+    "",
+    "To add it to a release train:",
+    `1. ${steps}`,
+    "2. Run the workflow again.",
+    "",
+  ].join("\n");
+}
+
 /**
  * The version a snapshot version is going to be released as, before looking at the
  * milestones: 7.0.1-SNAPSHOT gives 7.0.1. A snapshot version never carries a
@@ -36855,11 +36911,38 @@ async function run(
     requireDueDate = true,
     releaseOnly = false,
     requireReleaseTrain = false,
+    createMissing = false,
+    kind = "frozen",
   },
   { octokit },
 ) {
   const candidate = candidateOf(snapshotVersion);
   let milestone;
+  let created = false;
+  // A milestone that does not exist is created if told to, with a title and nothing else: no
+  // due date, and no release train. Only a hotfix goes on with it, as it needs neither (its
+  // train is the one of the OSS version). For any other, there is nothing to build until it is
+  // in a train, so it ends as if it were not found, with a notice.
+  const missing = async (message, exists = false) => {
+    // a milestone that exists, but is closed, is not created again
+    if (!createMissing || exists) {
+      return { result: { found: false, candidate, message } };
+    }
+    const made = await createMilestone(octokit, milestoneRepository, candidate);
+    if (kind === "active" && isHotfix(candidate)) {
+      return { milestone: made };
+    }
+    return {
+      result: {
+        found: false,
+        created: true,
+        candidate,
+        milestone: made,
+        notice: "Milestone created",
+        message: `Created the milestone ${candidate} in ${milestoneRepository}, which is not in a release train yet, so nothing is built`,
+      },
+    };
+  };
   if (candidate.endsWith(".0")) {
     const pattern = new RegExp(`^${escapeRegExp(candidate)}(-(M|RC)\\d+)?$`);
     const open = await listMilestones(octokit, milestoneRepository, "open");
@@ -36867,13 +36950,21 @@ async function run(
       .filter((m) => pattern.test(m.title))
       .sort(byDueDateThenRelease(candidate));
     if (matching.length === 0) {
-      return {
-        found: false,
-        candidate,
-        message: `${milestoneRepository} has no open milestone for ${candidate}: expected ${candidate}, ${candidate}-M<n> or ${candidate}-RC<n>, so nothing is built`,
-      };
-    }
-    if (releaseOnly && matching[0].title !== candidate) {
+      const closed =
+        createMissing &&
+        (await listMilestones(octokit, milestoneRepository, "all")).some(
+          (m) => m.title === candidate,
+        );
+      const outcome = await missing(
+        `${milestoneRepository} has no open milestone for ${candidate}: expected ${candidate}, ${candidate}-M<n> or ${candidate}-RC<n>, so nothing is built`,
+        closed,
+      );
+      if (outcome.result) {
+        return outcome.result;
+      }
+      milestone = outcome.milestone;
+      created = true;
+    } else if (releaseOnly && matching[0].title !== candidate) {
       return {
         found: false,
         candidate,
@@ -36881,16 +36972,21 @@ async function run(
         message: `The next release of ${candidate} in ${milestoneRepository} is ${matching[0].title}, and not ${candidate}, which is the only one that has a hotfix, so nothing is built`,
       };
     }
-    milestone = matching[0];
+    if (!created) {
+      milestone = matching[0];
+    }
   } else {
     const all = await listMilestones(octokit, milestoneRepository, "all");
     milestone = all.find((m) => m.title === candidate);
     if (!milestone) {
-      return {
-        found: false,
-        candidate,
-        message: `${milestoneRepository} has no milestone ${candidate}, so nothing is built`,
-      };
+      const outcome = await missing(
+        `${milestoneRepository} has no milestone ${candidate}, so nothing is built`,
+      );
+      if (outcome.result) {
+        return outcome.result;
+      }
+      milestone = outcome.milestone;
+      created = true;
     }
   }
 
@@ -36919,6 +37015,8 @@ async function run(
     dueDate,
     releaseTrain,
     milestoneUrl: milestone.html_url ?? "",
+    created,
+    milestone,
   };
 }
 
@@ -36944,6 +37042,11 @@ async function main() {
       false,
     ),
     kind: getInput("kind") || "frozen",
+    createMissing: parseBoolean(
+      "create-missing",
+      getInput("create-missing"),
+      false,
+    ),
     failIfMissing: parseBoolean(
       "fail-if-missing",
       getInput("fail-if-missing"),
@@ -36973,7 +37076,16 @@ async function main() {
   if (!result.found) {
     // a milestone that is there, but is not the release, is not one to add to a train, nor
     // a failure: there is only nothing to build
-    if (!result.notice) {
+    if (result.created) {
+      addSummary(
+        createdMilestoneSummary({
+          candidate: result.candidate,
+          repository: inputs.milestoneRepository,
+          milestone: result.milestone,
+          kind: inputs.kind,
+        }),
+      );
+    } else if (!result.notice) {
       addSummary(
         noTrainSummary({
           candidate: result.candidate,
@@ -36987,17 +37099,32 @@ async function main() {
     }
     notice(result.message, { title: result.notice ?? "No milestone" });
     setOutput("found", "false");
+    setOutput(
+      "no-release",
+      result.notice === "No release" ? "true" : "false",
+    );
     setOutput("release-version", "");
     setOutput("due-date", "");
     setOutput("release-train", "");
     setOutput("milestone-url", "");
     return;
   }
+  if (result.created) {
+    addSummary(
+      createdMilestoneSummary({
+        candidate: result.releaseVersion,
+        repository: inputs.milestoneRepository,
+        milestone: result.milestone,
+        kind: inputs.kind,
+      }),
+    );
+  }
   const { releaseVersion, dueDate, releaseTrain, milestoneUrl } = result;
   info(
     `${inputs.snapshotVersion} is released as ${releaseVersion}, due ${dueDate || "on no date"}`,
   );
   setOutput("found", "true");
+  setOutput("no-release", "false");
   setOutput("release-version", releaseVersion);
   setOutput("due-date", dueDate);
   setOutput("release-train", releaseTrain);
@@ -37009,8 +37136,9 @@ if (isMain(import.meta.url)) {
 }
 
 var __webpack_exports__candidateOf = __webpack_exports__.RH;
+var __webpack_exports__createdMilestoneSummary = __webpack_exports__.N8;
 var __webpack_exports__main = __webpack_exports__.iW;
 var __webpack_exports__noTrainSummary = __webpack_exports__.WO;
 var __webpack_exports__releaseTrainOf = __webpack_exports__.p4;
 var __webpack_exports__run = __webpack_exports__.eF;
-export { __webpack_exports__candidateOf as candidateOf, __webpack_exports__main as main, __webpack_exports__noTrainSummary as noTrainSummary, __webpack_exports__releaseTrainOf as releaseTrainOf, __webpack_exports__run as run };
+export { __webpack_exports__candidateOf as candidateOf, __webpack_exports__createdMilestoneSummary as createdMilestoneSummary, __webpack_exports__main as main, __webpack_exports__noTrainSummary as noTrainSummary, __webpack_exports__releaseTrainOf as releaseTrainOf, __webpack_exports__run as run };

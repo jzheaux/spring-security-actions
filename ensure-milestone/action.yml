@@ -1,0 +1,23 @@
+name: "ensure-milestone"
+description: "Creates a milestone in a repository if it has none of that title, with a title and nothing else (no due date, no description)"
+
+inputs:
+  repository:
+    description: "The repository (owner/repo) that has to have the milestone."
+    required: true
+  milestone:
+    description: "The title of the milestone, for example `7.0.1`."
+    required: true
+  token:
+    description: "A token that may write the milestones of the repository."
+    required: true
+
+outputs:
+  created:
+    description: "true if the milestone was created, false if the repository had it already (open or closed)."
+  milestone-url:
+    description: "The URL of the milestone on GitHub."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

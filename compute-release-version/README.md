@@ -32,12 +32,14 @@ The name is the branch of the train in the release train repository. The rest of
 | `release-only` | no, `false` | Whether a `.0` version is only found if its next release is the version itself (`7.2.0`), and not a milestone or a release candidate (`7.2.0-RC1`): the release workflow gives it for a hotfix, which is only made of the release itself. Otherwise it ends as if there were no milestone, with the notice **No release**, and `found` is `false`. |
 | `require-release-train` | no, `false` | Whether the description of the milestone must name its release train. If it does not, the action fails, and the summary says to add the line. |
 | `kind` | no, `frozen` | The kind of branch that is built: `frozen`, `active` or `lts`. It decides what the summary tells to do: for `frozen` (OSS milestone) and `active` (the OSS milestone of the version that a hotfix fixes, or the milestone of the hotfix in the commercial repository) give a due date on the date of a train; for `lts` (commercial milestone) add the line `Release Train: <train>` to its description. Only a commercial version names its train. |
+| `create-missing` | no, `false` | Whether to create the milestone if it does not exist, with a title and nothing else: no due date, no release train. For `active` and a hotfix, the action goes on with it (it needs neither). Any other ends successfully with the notice **Milestone created**, `found` is `false`, and the summary says what to set. The token must be allowed to create milestones. |
 | `fail-if-missing` | no, `true` | Whether the action fails if the milestone does not exist. If `false`, it ends successfully with the notice **No milestone**, which says which milestone is missing and in which repository, and the output `found` is `false`. A milestone that exists without a due date is still an error. |
 
 ## Outputs
 
 | Output | Description |
 |---|---|
+| `no-release` | `true` if `release-only` found a `.0` version whose next release is a milestone or a release candidate (the notice **No release**), `false` otherwise. A version that is not built, as opposed to a milestone that does not exist. |
 | `found` | `true` if the milestone exists. `false` if it does not and `fail-if-missing` is `false`: then the two outputs below are empty. |
 | `release-version` | The title of the milestone: `7.0.1`, or `7.1.0-RC1`. |
 | `due-date` | Its due date, `YYYY-MM-DD` (UTC). Empty if it has none and `require-due-date` is `false`. |
