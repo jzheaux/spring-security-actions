@@ -12,27 +12,35 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 |---|---|
 | [`align-milestone`](align-milestone/README.md) | Sets the due date of the milestone of a hotfix to the commercial general availability of its release train. |
 | [`apply-commercial-license`](apply-commercial-license/README.md) | Changes a repository to the commercial license, for a hotfix: the headers (one year), `etc/checkstyle/header.txt`, `LICENSE.txt` and the license of the POM. |
+| [`apply-freeze`](apply-freeze/README.md) | Makes the merges and the version commits of a code freeze, locally, in the order that keeps commercial code out of OSS. |
 | [`check-not-ready`](check-not-ready/README.md) | Fails if the release train has the release as ready already. |
 | [`check-oss-support`](check-oss-support/README.md) | Fails if the OSS support of the generation of a version ends before a date, from the Spring projects API. |
 | [`compare-branches`](compare-branches/README.md) | Whether a branch has changes that another branch lacks: a hotfix is only built for an active embargoed branch that differs from the frozen one. |
 | [`compute-release-version`](compute-release-version/README.md) | The release version of a snapshot version, and its due date, from the milestones of a repository. |
 | [`ensure-dependency-issues`](ensure-dependency-issues/README.md) | An issue for every dependency update, in a milestone. It makes the ones that are missing. |
 | [`ensure-milestone`](ensure-milestone/README.md) | Creates a milestone in a repository if it has none of that title, with no due date. |
+| [`freeze-summary`](freeze-summary/README.md) | Writes the summary of a code freeze. |
 | [`git-identity`](git-identity/README.md) | Sets who commits: `github-actions[bot]` by default. |
 | [`join-train`](join-train/README.md) | Joins a release to the release train, by running the workflow Release Train - Join of the project on the release branch. |
+| [`list-branches`](list-branches/README.md) | The OSS and the commercial (long-term support) branches of a Spring project, from the Spring projects API, and the check of an override. |
 | [`load-train`](load-train/README.md) | Reads the release train of a date. |
 | [`map-train-versions`](map-train-versions/README.md) | Which versions of a version catalog the release train asks to change, and to what. |
 | [`merge-release`](merge-release/README.md) | Merges the release into the branch of its hotfix. |
 | [`name-repositories`](name-repositories/README.md) | The project and its OSS repository, from the commercial repository. |
+| [`plan-freeze`](plan-freeze/README.md) | Plans a code freeze: the next versions, the releases to mark ready, and everything that stops it. |
 | [`plan-release-branches`](plan-release-branches/README.md) | What the push of an embargoed branch builds. |
 | [`push-branches`](push-branches/README.md) | Pushes branches at once or none, and summarizes them. |
+| [`push-freeze`](push-freeze/README.md) | Checks that no commercial code goes to OSS, and pushes the branches of a code freeze, atomically and without force. |
+| [`ready-train`](ready-train/README.md) | Runs the workflow Release Train - Ready of the project on each release branch of a code freeze, and waits for it. |
 | [`set-version`](set-version/README.md) | Sets the version of `gradle.properties`, in a commit of its own. |
 | [`start-branch`](start-branch/README.md) | Starts (or resets) a branch at a commit or a branch. |
 | [`update-versions`](update-versions/README.md) | Changes the versions of a version catalog, with one commit for each. |
 
-## The workflow of the release automation
+## The workflows of the release automation
 
 [`release-branches.yml`](.github/workflows/release-branches.yml) is a reusable workflow that builds `release/<version>` and the snapshot branches on a push to an embargoed branch, with the actions above and nothing else (every step is an action). [docs/release-branches.md](docs/release-branches.md) is the guide: what it builds, how to call it, the secret and the tokens it needs, and what to do when it fails.
+
+[`code-freeze.yml`](.github/workflows/code-freeze.yml) is a reusable workflow for the code freeze of a project: it moves every branch to its next development version, merges forward, marks the releases ready and pushes, with a dry run that is on by default. [docs/code-freeze.md](docs/code-freeze.md) is the guide, with the caller, the stub that the default branch of the commercial repository needs, and the guarantee that nothing commercial reaches OSS.
 
 ## Working on an action
 
@@ -47,4 +55,4 @@ npm run build       # formats, and bundles src/ into dist/: commit both
 
 ## Releasing a change of an action
 
-The release workflow calls the actions of this repository at a commit, so a change of an action reaches the callers in three steps: merge the change, change the commit in every `uses:` of `.github/workflows/release-branches.yml` to the commit of the merge (CI checks that they are commits of this repository), and tag the commit of that second change. Callers of the workflow then pin the tag's commit.
+The release workflow calls the actions of this repository at a commit, so a change of an action reaches the callers in three steps: merge the change, change the commit in every `uses:` of `.github/workflows/release-branches.yml` and `.github/workflows/code-freeze.yml` to the commit of the merge (CI checks that they are commits of this repository), and tag the commit of that second change. Callers of the workflow then pin the tag's commit.

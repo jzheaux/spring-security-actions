@@ -25,14 +25,16 @@ jobs:
     steps:
       - name: Check out the commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Check that the release workflow has no script, only actions
-        run: "! grep -nE '^[[:space:]]+run:' .github/workflows/release-branches.yml"
-      - name: Check that the release workflow uses the actions of this repository at a commit
+      - name: Check that the release and the code freeze workflows have no script, only actions
+        run: "! grep -nE '^[[:space:]]+run:' .github/workflows/release-branches.yml .github/workflows/code-freeze.yml"
+      - name: Check that the release and the code freeze workflows use the actions of this repository at a commit
         run: |
-          if grep -E 'uses: .*spring-security-actions/' .github/workflows/release-branches.yml | grep -vE 'uses: spring-io/spring-security-actions/[a-z-]+@[0-9a-f]{40} # '; then
-            echo "::error::release-branches.yml must use the actions of spring-io/spring-security-actions at a commit, with a comment that names the tag"
-            exit 1
-          fi
+          for workflow in release-branches.yml code-freeze.yml; do
+            if grep -E 'uses: .*spring-security-actions/' ".github/workflows/$workflow" | grep -vE 'uses: spring-io/spring-security-actions/[a-z-]+@[0-9a-f]{40} # '; then
+              echo "::error::$workflow must use the actions of spring-io/spring-security-actions at a commit, with a comment that names the tag"
+              exit 1
+            fi
+          done
       - name: Find the actions that have a package.json
         id: find
         run: |

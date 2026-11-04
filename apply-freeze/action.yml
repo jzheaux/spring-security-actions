@@ -1,0 +1,30 @@
+name: "apply-freeze"
+description: "Makes the merges and the version commits of a code freeze, locally, in the order that keeps commercial code out of OSS"
+
+inputs:
+  plan-file:
+    description: "The plan of the freeze (the output `plan-file` of `plan-freeze`). code-freeze/plan.json in RUNNER_TEMP by default."
+    required: false
+  apply-file:
+    description: "Where to write what was done, as JSON. code-freeze/apply.json in RUNNER_TEMP by default."
+    required: false
+  commercial-remote:
+    description: "The remote of the commercial repository."
+    required: false
+    default: "origin"
+  oss-remote:
+    description: "The remote of the OSS repository, which `plan-freeze` fetched."
+    required: false
+    default: "oss"
+  path:
+    description: "The directory of the clone of the commercial repository. It needs a clean working tree and an identity (`git-identity`)."
+    required: false
+    default: "."
+
+outputs:
+  apply-file:
+    description: "The file with what was done, as JSON: the refs of the branches before and after, the merges, the version commits, the rotation, and the commits that were made in each repository."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

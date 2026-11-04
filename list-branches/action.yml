@@ -1,0 +1,27 @@
+name: "list-branches"
+description: "Lists the OSS and the commercial (long-term support) branches of a Spring project from the Spring projects API, and checks the overrides of them"
+
+inputs:
+  project:
+    description: "The slug of the project in the Spring projects API, for example `spring-security`."
+    required: true
+  branches:
+    description: "The OSS branches to freeze, separated by commas, the oldest first (`7.1.x,main`). Empty: all the OSS generations of the API."
+    required: false
+  lts-branches:
+    description: "The commercial (long-term support) generations to freeze, separated by commas, the oldest first (`6.4.x,6.5.x`). Empty: all the commercial generations of the API."
+    required: false
+  api-url:
+    description: "The Spring projects API."
+    required: false
+    default: "https://api.spring.io"
+
+outputs:
+  oss-branches:
+    description: "The OSS branches, separated by commas, the oldest first. The newest generation is main."
+  lts-branches:
+    description: "The commercial generations, separated by commas, the oldest first. Their branches are embargoed/lts/<generation>."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

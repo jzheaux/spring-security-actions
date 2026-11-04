@@ -39,16 +39,22 @@ updates:
     target-branch: main
     directories:
       - /apply-commercial-license
+      - /apply-freeze
       - /check-not-ready
       - /compute-release-version
       - /ensure-dependency-issues
+      - /freeze-summary
       - /git-identity
+      - /list-branches
       - /load-train
       - /map-train-versions
       - /merge-release
       - /name-repositories
+      - /plan-freeze
       - /plan-release-branches
       - /push-branches
+      - /push-freeze
+      - /ready-train
       - /set-version
       - /start-branch
       - /update-versions

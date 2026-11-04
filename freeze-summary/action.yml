@@ -1,0 +1,27 @@
+name: "freeze-summary"
+description: "Writes the summary of a code freeze: the versions, the releases marked ready, the merges and the pushes"
+
+inputs:
+  dry-run:
+    description: "`true` for a dry run: the summary says so, and that nothing was marked ready."
+    required: false
+    default: "false"
+  job-status:
+    description: "The status of the job (`failure` says FAILED in the title)."
+    required: false
+  plan-file:
+    description: "The plan. code-freeze/plan.json in RUNNER_TEMP by default."
+    required: false
+  apply-file:
+    description: "What was applied. code-freeze/apply.json in RUNNER_TEMP by default."
+    required: false
+  ready-file:
+    description: "The ready runs. code-freeze/ready.json in RUNNER_TEMP by default."
+    required: false
+  push-file:
+    description: "What was pushed. code-freeze/push.json in RUNNER_TEMP by default."
+    required: false
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

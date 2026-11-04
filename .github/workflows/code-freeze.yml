@@ -1,0 +1,129 @@
+name: code-freeze
+
+# The code freeze of a project: every branch moves on to its next development version, the
+# history is merged forward, and the branches are pushed, while the release branches
+# (release/<version>, built by the release-branches workflow) do the releasing.
+#
+#   1. Plan (read-only). The branches come from the Spring projects API (the OSS generations and the
+#      commercial, long-term support ones), or from the inputs branches and lts-branches. For each:
+#      its version, the next one, and the release it needs, release/<version>, which must exist,
+#      have joined the release train and not be ready. Everything that stops the freeze is
+#      listed at once, and nothing is changed.
+#   2. Apply, locally: the OSS branches first, from the OSS repository alone (a version commit,
+#      after the merge across of the branch before it), and then the embargoed ones, which merge
+#      the finished OSS branches down. Each frozen branch is then fast forwarded to its active one.
+#   3. Check: no commit that only the commercial repository has goes to OSS, and both pushes would
+#      be accepted (git push --dry-run). A dry run ends here.
+#   4. Ready: release-train-ready.yml of the project runs on each release branch, and is waited for.
+#   5. Push: the commercial repository, then OSS, each in one atomic push, without force.
+#
+# This is a reusable workflow: the commercial repository of a project calls it from a workflow
+# that is run by hand (workflow_dispatch), see docs/code-freeze.md for the caller, the stub that
+# its default branch needs, and the secret. The OSS repository is the commercial one without
+# -commercial. The actions are the ones of this repository, each in a directory of its own with a
+# README. Nothing in this workflow is a script: what it does is in the actions.
+
+on:
+  workflow_call:
+    inputs:
+      release-train:
+        description: "The release train of the freeze, the name of its branch in the release train repository, for example 2026.11.19"
+        type: string
+        required: true
+      branches:
+        description: "The OSS branches to freeze, separated by commas, the oldest first (7.1.x,main). Empty: all the OSS generations of the Spring projects API"
+        type: string
+        required: false
+        default: ""
+      lts-branches:
+        description: "The commercial (long-term support) generations to freeze, separated by commas, the oldest first (6.4.x,6.5.x). Empty: all the commercial generations of the Spring projects API"
+        type: string
+        required: false
+        default: ""
+      dry-run:
+        description: "Only plan, apply and check in a clone of the runner, and say what would be done: nothing is marked ready or pushed"
+        type: boolean
+        required: false
+        default: true
+      runs-on:
+        description: "The runner of the job: a label, such as ubuntu22-2-8 for the runners of the organization. A caller that passes an empty value, as a variable that is not set is, gets the default"
+        type: string
+        required: false
+        default: ubuntu-latest
+    secrets:
+      RELEASE_AUTOMATION_TOKEN:
+        description: "The token that checks out and pushes the commercial repository, fetches and pushes the OSS repository, reads the release train and the milestones of both, and runs release-train-ready.yml on the release branches (Actions: Read and write)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-freeze-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  freeze:
+    name: Code freeze
+    runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
+    steps:
+      # All the branches of the commercial repository: the embargoed ones and the release ones.
+      - name: Check out the commercial repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      - name: Set the git identity
+        uses: spring-io/spring-security-actions/git-identity@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+      - name: Name the repositories
+        id: repositories
+        uses: spring-io/spring-security-actions/name-repositories@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+      - name: List the branches to freeze
+        id: branches
+        uses: spring-io/spring-security-actions/list-branches@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+        with:
+          project: ${{ steps.repositories.outputs.project }}
+          branches: ${{ inputs.branches }}
+          lts-branches: ${{ inputs.lts-branches }}
+      - name: Read the release train
+        id: train
+        uses: spring-io/spring-security-actions/load-train@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+        with:
+          branch: ${{ inputs.release-train }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      - name: Plan the freeze
+        id: plan
+        uses: spring-io/spring-security-actions/plan-freeze@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+        with:
+          project: ${{ steps.repositories.outputs.project }}
+          oss-repository: ${{ steps.repositories.outputs.oss-repository }}
+          oss-branches: ${{ steps.branches.outputs.oss-branches }}
+          lts-branches: ${{ steps.branches.outputs.lts-branches }}
+          train: ${{ inputs.release-train }}
+          train-found: ${{ steps.train.outputs.found }}
+          train-file: ${{ steps.train.outputs.train-file }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      - name: Merge and bump the versions, locally
+        uses: spring-io/spring-security-actions/apply-freeze@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+      # Nothing from the commercial repository may reach OSS, and the pushes must be accepted: this is
+      # found out before anything is marked ready, which cannot be undone.
+      - name: Check that no commercial code goes to OSS, and that the pushes would be accepted
+        uses: spring-io/spring-security-actions/push-freeze@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+        with:
+          mode: check
+      - name: Mark the releases ready in the release train
+        if: ${{ !inputs.dry-run }}
+        uses: spring-io/spring-security-actions/ready-train@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+        with:
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      - name: Push the commercial repository, and then OSS
+        if: ${{ !inputs.dry-run }}
+        uses: spring-io/spring-security-actions/push-freeze@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+        with:
+          mode: push
+      - name: Summarize the freeze
+        if: ${{ always() }}
+        uses: spring-io/spring-security-actions/freeze-summary@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
+        with:
+          dry-run: ${{ inputs.dry-run }}
+          job-status: ${{ job.status }}
