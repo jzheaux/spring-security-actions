@@ -254,6 +254,20 @@ describe("merge-release", () => {
       );
     });
 
+    it("warns about the snapshot, not the release, if the branch of the snapshot is missing", async () => {
+      const { clone } = world();
+      const result = await program(
+        entry,
+        clone,
+        "embargoed/7.0.1-INTERNAL-SNAPSHOT",
+      );
+      expect(result.code).toBe(0);
+      expect(result.outputs).toEqual({ merged: "false" });
+      expect(result.stdout).toContain(
+        "::warning title=No snapshot to build the hotfix snapshot on::embargoed/7.0.1-INTERNAL-SNAPSHOT does not exist, so the hotfix snapshot is built from the active embargoed branch alone",
+      );
+    });
+
     it("says which files both sides changed, and keeps the active side", async () => {
       const { clone } = world({ edit: bothChanged });
       const result = await program(entry, clone);

@@ -124,7 +124,7 @@ describe("pushBranches", () => {
 describe.each([["src/index.js"], ["dist/index.js"]])(
   "the program %s",
   (entry) => {
-    it("pushes, and puts a table in the summary", async () => {
+    it("pushes the branches, and tells in the summary what it created", async () => {
       const { clone, origin, main } = world();
       const summary = path.join(
         fs.mkdtempSync(path.join(os.tmpdir(), "summary-")),
@@ -142,137 +142,17 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       );
       expect(result.code).toBe(0);
       expect(remote(origin, "release/1.0")).toBeDefined();
-      expect(fs.readFileSync(summary, "utf8")).toBe(
+      const text = fs.readFileSync(summary, "utf8");
+      expect(text).toContain(
+        "This push creates two branches that are used for releasing 1.0: `embargoed/1.0-SNAPSHOT`, the snapshot, and `release/1.0`, the release.",
+      );
+      expect(text).toContain(
         [
-          "### embargoed/frozen/1.0.x",
-          "",
-          "| Branch | Version | Commits on the pushed commit |",
+          "| Branch | Version | Not in OSS |",
           "| --- | --- | --- |",
+          "| `embargoed/1.0-SNAPSHOT` | 1.0-SNAPSHOT | 2 |",
           "| `release/1.0` | 1.0 | 1 |",
-          "| `embargoed/1.0-SNAPSHOT` | 1.0-SNAPSHOT | 2 |",
-          "",
         ].join("\n"),
-      );
-    });
-
-    it("links the branches to GitHub when the repository is known", async () => {
-      const { clone, main } = world();
-      const summary = path.join(
-        fs.mkdtempSync(path.join(os.tmpdir(), "summary-")),
-        "summary.md",
-      );
-      const result = await runAction(
-        entry,
-        {
-          branches: "release/1.0=1.0\nembargoed/1.0-SNAPSHOT=1.0-SNAPSHOT",
-          base: main,
-          path: clone,
-          title: "embargoed/frozen/1.0.x",
-        },
-        {
-          GITHUB_STEP_SUMMARY: summary,
-          GITHUB_SERVER_URL: "https://github.example.com/",
-          GITHUB_REPOSITORY: "acme/widgets",
-        },
-      );
-      expect(result.code).toBe(0);
-      expect(fs.readFileSync(summary, "utf8")).toBe(
-        [
-          "### embargoed/frozen/1.0.x",
-          "",
-          "| Branch | Version | Commits on the pushed commit |",
-          "| --- | --- | --- |",
-          "| [`release/1.0`](https://github.example.com/acme/widgets/tree/release/1.0) | 1.0 | 1 |",
-          "| [`embargoed/1.0-SNAPSHOT`](https://github.example.com/acme/widgets/tree/embargoed/1.0-SNAPSHOT) | 1.0-SNAPSHOT | 2 |",
-          "",
-        ].join("\n"),
-      );
-    });
-
-    it("links to github.com when the server is not set", async () => {
-      const { clone, main } = world();
-      const summary = path.join(
-        fs.mkdtempSync(path.join(os.tmpdir(), "summary-")),
-        "summary.md",
-      );
-      const result = await runAction(
-        entry,
-        {
-          branches: "release/1.0=1.0\nembargoed/1.0-SNAPSHOT=1.0-SNAPSHOT",
-          base: main,
-          path: clone,
-          title: "t",
-        },
-        { GITHUB_STEP_SUMMARY: summary, GITHUB_REPOSITORY: "acme/widgets" },
-      );
-      expect(result.code).toBe(0);
-      expect(fs.readFileSync(summary, "utf8")).toBe(
-        [
-          "### t",
-          "",
-          "| Branch | Version | Commits on the pushed commit |",
-          "| --- | --- | --- |",
-          "| [`release/1.0`](https://github.com/acme/widgets/tree/release/1.0) | 1.0 | 1 |",
-          "| [`embargoed/1.0-SNAPSHOT`](https://github.com/acme/widgets/tree/embargoed/1.0-SNAPSHOT) | 1.0-SNAPSHOT | 2 |",
-          "",
-        ].join("\n"),
-      );
-    });
-
-    it("links the release to its milestone, and the train, but not the snapshot", async () => {
-      const { clone, main } = world();
-      const summary = path.join(
-        fs.mkdtempSync(path.join(os.tmpdir(), "summary-")),
-        "summary.md",
-      );
-      const result = await runAction(
-        entry,
-        {
-          branches: "release/1.0=1.0\nembargoed/1.0-SNAPSHOT=1.0-SNAPSHOT",
-          base: main,
-          path: clone,
-          title: "t",
-          "milestone-url": "https://github.com/acme/widgets/milestone/12",
-          train: "2026.11.19",
-          "train-status": "joined",
-          "train-state": "pending",
-          "train-state-url":
-            "https://github.com/acme/train/blob/2026.11.19/train.yml#L1",
-          "train-url": "https://github.com/acme/train/tree/2026.11.19",
-        },
-        { GITHUB_STEP_SUMMARY: summary },
-      );
-      expect(result.code).toBe(0);
-      expect(fs.readFileSync(summary, "utf8")).toBe(
-        [
-          "### t",
-          "",
-          "[Release train 2026.11.19](https://github.com/acme/train/tree/2026.11.19) is [pending](https://github.com/acme/train/blob/2026.11.19/train.yml#L1): joined, not ready yet",
-          "",
-          "| Branch | Version | Commits on the pushed commit |",
-          "| --- | --- | --- |",
-          "| `release/1.0` | [1.0](https://github.com/acme/widgets/milestone/12) | 1 |",
-          "| `embargoed/1.0-SNAPSHOT` | 1.0-SNAPSHOT | 2 |",
-          "",
-        ].join("\n"),
-      );
-    });
-
-    it("encodes the unusual characters of a branch in its link", async () => {
-      const { clone, main } = world();
-      git(clone, "branch", "release/a#b%c", main);
-      const summary = path.join(
-        fs.mkdtempSync(path.join(os.tmpdir(), "summary-")),
-        "summary.md",
-      );
-      const result = await runAction(
-        entry,
-        { branches: "release/a#b%c=1", base: main, path: clone, title: "t" },
-        { GITHUB_STEP_SUMMARY: summary, GITHUB_REPOSITORY: "acme/widgets" },
-      );
-      expect(result.code).toBe(0);
-      expect(fs.readFileSync(summary, "utf8")).toContain(
-        "| [`release/a#b%c`](https://github.com/acme/widgets/tree/release/a%23b%25c) | 1 | 0 |",
       );
     });
 

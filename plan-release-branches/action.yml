@@ -18,10 +18,16 @@ outputs:
     description: "The snapshot version that the release version is worked out from: the version of a frozen embargoed branch (7.0.1-SNAPSHOT), or the hotfix version of an active one (7.0.1.1-SNAPSHOT), or the version of a long-term support one (7.0.1-SNAPSHOT)"
   hotfix:
     description: "true for an active embargoed branch: a hotfix is built, and hotfix versions of the dependencies are preferred"
-  hotfix-of:
-    description: "For a hotfix, the release branch that it fixes and is built on (release/7.0.1-SNAPSHOT). Empty for a frozen embargoed branch"
+  hotfix-of-snapshot:
+    description: "For a hotfix, the snapshot branch that the hotfix snapshot is based on (embargoed/7.0.1-INTERNAL-SNAPSHOT). Empty for a frozen or a long-term support embargoed branch"
+  hotfix-of-release:
+    description: "For a hotfix, the release branch that the hotfix release is based on (release/7.0.1). Empty for a frozen or a long-term support embargoed branch"
   hotfix-of-version:
     description: "For a hotfix, the version of the release that it fixes (7.0.1), which is the milestone of the OSS repository that decides its release train. Empty for a frozen embargoed branch"
+  oss-branch:
+    description: "The branch of the OSS repository that the generation is in (7.0.x for embargoed/frozen/7.0.x): what a frozen or a long-term support branch is compared with, to say what it has that OSS lacks"
+  oss-tag:
+    description: "For a hotfix, the tag that OSS has once the release it fixes is public (7.0.1): what a hotfix is compared with. Empty for a frozen or a long-term support embargoed branch"
   deployment-destination:
     description: "Where the release is deployed to, as the workflow Release Train - Join of the project names it: Maven Central for a frozen embargoed branch, Spring Enterprise for an active one"
   frozen-branch:

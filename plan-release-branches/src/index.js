@@ -19,9 +19,19 @@ const HOTFIX = /^\d+\.\d+\.\d+\.\d+$/;
  *                     of an active one (7.0.1.1-SNAPSHOT)
  *   hotfix            true for an active embargoed branch: a hotfix is built, and hotfix versions
  *                     of the dependencies are preferred
- *   hotfixOf          for a hotfix, the release branch that it fixes and is built on:
- *                     release/7.0.1-SNAPSHOT for 7.0.1-SNAPSHOT. Empty for a frozen embargoed branch
+ *   hotfixOfSnapshot  for a hotfix, the snapshot branch that the hotfix snapshot is based on:
+ *                     embargoed/7.0.1-INTERNAL-SNAPSHOT for 7.0.1-SNAPSHOT. Empty for a frozen or
+ *                     a long-term support embargoed branch
+ *   hotfixOfRelease   for a hotfix, the release branch that the hotfix release is based on:
+ *                     release/7.0.1 for 7.0.1-SNAPSHOT. Empty for a frozen or a long-term support
+ *                     embargoed branch
  *   hotfixOfVersion   the version of that release: 7.0.1. Empty for a frozen embargoed branch
+ *   ossBranch         the branch of the OSS repository that the generation is in: 7.0.x for
+ *                     embargoed/frozen/7.0.x. What a frozen or a long-term support branch is
+ *                     compared with, to say what it has that OSS lacks
+ *   ossTag            for a hotfix, the tag that OSS has once the release it fixes is public:
+ *                     7.0.1. What a hotfix is compared with. Empty for a frozen or a long-term
+ *                     support embargoed branch
  *   deploymentDestination
  *                     where the release is deployed to, as the release train names it:
  *                     Maven Central for a frozen embargoed branch, Spring Enterprise for an
@@ -60,6 +70,7 @@ export function plan({ refName, version }) {
     );
   }
   const plain = match[1];
+  const ossBranch = refName.replace(/^embargoed\/[a-z]+\//, "");
 
   if (kind === "lts") {
     if (HOTFIX.test(plain)) {
@@ -75,8 +86,11 @@ export function plan({ refName, version }) {
       kind,
       baseVersion: version,
       hotfix: false,
-      hotfixOf: "",
+      hotfixOfSnapshot: "",
+      hotfixOfRelease: "",
       hotfixOfVersion: "",
+      ossBranch,
+      ossTag: "",
       deploymentDestination: "Spring Enterprise",
       frozenBranch: "",
       snapshotBranch: `embargoed/${plain}-SNAPSHOT`,
@@ -95,8 +109,11 @@ export function plan({ refName, version }) {
       kind,
       baseVersion: version,
       hotfix: false,
-      hotfixOf: "",
+      hotfixOfSnapshot: "",
+      hotfixOfRelease: "",
       hotfixOfVersion: "",
+      ossBranch,
+      ossTag: "",
       deploymentDestination: "Maven Central",
       frozenBranch: "",
       snapshotBranch: `embargoed/${plain}-INTERNAL-SNAPSHOT`,
@@ -117,8 +134,11 @@ export function plan({ refName, version }) {
     kind,
     baseVersion: `${hotfix}-SNAPSHOT`,
     hotfix: true,
-    hotfixOf: `release/${plain}-SNAPSHOT`,
+    hotfixOfSnapshot: `embargoed/${plain}-INTERNAL-SNAPSHOT`,
+    hotfixOfRelease: `release/${plain}`,
     hotfixOfVersion: plain,
+    ossBranch,
+    ossTag: plain,
     deploymentDestination: "Spring Enterprise",
     frozenBranch: refName.replace(/^embargoed\/active\//, "embargoed/frozen/"),
     snapshotBranch: `embargoed/${hotfix}-SNAPSHOT`,
@@ -131,8 +151,11 @@ const OUTPUTS = {
   kind: "kind",
   baseVersion: "base-version",
   hotfix: "hotfix",
-  hotfixOf: "hotfix-of",
+  hotfixOfSnapshot: "hotfix-of-snapshot",
+  hotfixOfRelease: "hotfix-of-release",
   hotfixOfVersion: "hotfix-of-version",
+  ossBranch: "oss-branch",
+  ossTag: "oss-tag",
   deploymentDestination: "deployment-destination",
   frozenBranch: "frozen-branch",
   snapshotBranch: "snapshot-branch",
