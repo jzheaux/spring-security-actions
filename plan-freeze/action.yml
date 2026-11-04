@@ -1,0 +1,50 @@
+name: "plan-freeze"
+description: "Plans a code freeze: the next version of every branch, the releases to mark ready, and everything that stops the freeze. It changes nothing but the OSS remote that it fetches"
+
+inputs:
+  project:
+    description: "The project id in the release train, for example `spring-security`."
+    required: true
+  oss-repository:
+    description: "The OSS repository (owner/repo), the one without -commercial."
+    required: true
+  oss-branches:
+    description: "The OSS branches to freeze, separated by commas, the oldest first (the output `oss-branches` of `list-branches`)."
+    required: true
+  lts-branches:
+    description: "The commercial (long-term support) generations to freeze, separated by commas, the oldest first. Empty: none."
+    required: false
+  train:
+    description: "The release train, the name of its branch, for example `2026.11.19`."
+    required: true
+  train-found:
+    description: "Whether the train exists (the output `found` of `load-train`)."
+    required: false
+    default: "true"
+  train-file:
+    description: "The file with `train.yml` as JSON (the output `train-file` of `load-train`). Needed if the train exists."
+    required: false
+  token:
+    description: "A token that can read the milestones of the OSS and of the commercial repository."
+    required: false
+  host-repository:
+    description: "The commercial repository (owner/repo) that runs the freeze. GITHUB_REPOSITORY by default. Its name must end with -commercial."
+    required: false
+  oss-url:
+    description: "The URL to fetch the OSS repository from. The server and `oss-repository` by default."
+    required: false
+  path:
+    description: "The directory of the clone of the commercial repository, with all its branches."
+    required: false
+    default: "."
+  plan-file:
+    description: "Where to write the plan, as JSON. code-freeze/plan.json in RUNNER_TEMP by default."
+    required: false
+
+outputs:
+  plan-file:
+    description: "The file with the plan, as JSON: the branches with their versions, the releases to mark ready, and the problems. It is written even if there are problems, and then the action fails."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

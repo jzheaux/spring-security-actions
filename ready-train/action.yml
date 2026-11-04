@@ -1,0 +1,32 @@
+name: "ready-train"
+description: "Runs release-train-ready.yml of the project on each release branch of a code freeze, and waits for every run"
+
+inputs:
+  plan-file:
+    description: "The plan of the freeze (the output `plan-file` of `plan-freeze`), which has the releases. code-freeze/plan.json in RUNNER_TEMP by default."
+    required: false
+  ready-file:
+    description: "Where to write the runs, as JSON. code-freeze/ready.json in RUNNER_TEMP by default."
+    required: false
+  repository:
+    description: "The repository (owner/repo) with the release branches and the workflow, the commercial one. GITHUB_REPOSITORY by default."
+    required: false
+  release-train-repository:
+    description: "The release train repository, which the workflow of the project is told."
+    required: false
+    default: "spring-io/release-train"
+  token:
+    description: "A token that may run workflows of the repository (Actions: Read and write, or the scope repo)."
+    required: true
+  poll-interval:
+    description: "Seconds between two looks at a run."
+    required: false
+    default: "3"
+
+outputs:
+  ready-file:
+    description: "The file with the run of each release, as JSON: the branch, the version, the URL of the run and its conclusion."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

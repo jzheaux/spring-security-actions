@@ -1,0 +1,33 @@
+name: "push-freeze"
+description: "Checks that no commercial code goes to OSS, and pushes the branches of a code freeze, atomically and without force"
+
+inputs:
+  mode:
+    description: "`check`: the tripwire and a push that is only tried (`--dry-run`) to both remotes. `push`: the tripwire again, then the commercial repository, then OSS."
+    required: true
+  apply-file:
+    description: "What was done (the output `apply-file` of `apply-freeze`). code-freeze/apply.json in RUNNER_TEMP by default."
+    required: false
+  push-file:
+    description: "Where to write what was checked and pushed, as JSON. code-freeze/push.json in RUNNER_TEMP by default."
+    required: false
+  commercial-remote:
+    description: "The remote of the commercial repository."
+    required: false
+    default: "origin"
+  oss-remote:
+    description: "The remote of the OSS repository."
+    required: false
+    default: "oss"
+  path:
+    description: "The directory of the clone."
+    required: false
+    default: "."
+
+outputs:
+  push-file:
+    description: "The file with what was checked and pushed, as JSON."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"
