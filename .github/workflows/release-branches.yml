@@ -156,10 +156,9 @@ jobs:
       # The hotfix of a .0 version is only built for the GA (7.2.0), and not for 7.2.0-RC1, so this is
       # looked at before the milestone of the hotfix, which is not created if there is no release.
       # The milestone of the hotfix is created even if the OSS milestone has no due date, so this
-      # step does not stop the job: the step after the milestone of the hotfix does, and says why.
+      # step does not ask for one: the step after the milestone of the hotfix does, and fails.
       - name: Work out the date of the release train of the hotfix
         id: train-milestone
-        continue-on-error: true
         if: steps.plan.outputs.kind == 'active' && steps.plan.outputs.release == 'true' && steps.compare.outputs.different == 'true'
         uses: spring-io/spring-security-actions/compute-release-version@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
         with:
@@ -167,6 +166,7 @@ jobs:
           milestone-repository: ${{ steps.repositories.outputs.oss-repository }}
           milestone-token: ${{ secrets.GITHUB_TOKEN }}
           release-only: "true"
+          require-due-date: "false"
           fail-if-missing: "false"
           kind: ${{ steps.plan.outputs.kind }}
       # If the milestone does not exist, it is created, with a title and nothing else: no due date
@@ -202,12 +202,17 @@ jobs:
           due-date: ${{ steps.release.outputs.due-date }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       # The milestone of the hotfix is there now. Without a due date on the OSS milestone that it
-      # fixes, the hotfix has no release train, and the run stops: its summary says to set it.
-      - name: Stop if the OSS milestone of the hotfix is not in a release train
-        if: steps.train-milestone.outcome == 'failure'
-        run: |
-          echo "::error title=Not in a release train::The OSS milestone of the release that the hotfix fixes is not in a release train: see the summary"
-          exit 1
+      # fixes, the hotfix has no release train, and the run stops: the same action asks for the
+      # due date, and fails with a summary that says to set it.
+      - name: Stop if the OSS milestone of the hotfix has no due date
+        if: steps.train-milestone.outputs.found == 'true' && steps.train-milestone.outputs.due-date == ''
+        uses: spring-io/spring-security-actions/compute-release-version@899e15871a78dd5e907057f9e5838002e9cf2843 # unreleased
+        with:
+          snapshot-version: ${{ format('{0}-SNAPSHOT', steps.plan.outputs.hotfix-of-version) }}
+          milestone-repository: ${{ steps.repositories.outputs.oss-repository }}
+          milestone-token: ${{ secrets.GITHUB_TOKEN }}
+          release-only: "true"
+          kind: ${{ steps.plan.outputs.kind }}
       # A frozen or active embargoed branch is for a generation that is still OSS when the release
       # is made public (the date of its train). Once it is commercial, it has one embargoed/lts branch.
       - name: Check that the generation is still supported as OSS
