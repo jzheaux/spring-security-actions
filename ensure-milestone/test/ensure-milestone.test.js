@@ -44,6 +44,31 @@ describe("ensure-milestone", () => {
     ]);
   });
 
+  it("creates a milestone with the description that is given", async () => {
+    const octokit = fakeOctokit([]);
+    await run(
+      {
+        repository,
+        milestone: "7.0.1",
+        description: "OSS milestone: https://github.com/x/y/milestone/3",
+      },
+      { octokit },
+    );
+    expect(octokit.created[0].description).toBe(
+      "OSS milestone: https://github.com/x/y/milestone/3",
+    );
+  });
+
+  it("does not give a milestone that exists the description", async () => {
+    const octokit = fakeOctokit([{ title: "7.0.1", state: "open" }]);
+    await run(
+      { repository, milestone: "7.0.1", description: "OSS milestone: x" },
+      { octokit },
+    );
+    expect(octokit.created).toEqual([]);
+    expect(octokit.updates).toEqual([]);
+  });
+
   it.each(["open", "closed"])(
     "does not touch a milestone that is %s",
     async (state) => {

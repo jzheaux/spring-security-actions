@@ -192,7 +192,8 @@ jobs:
           require-release-train: ${{ steps.plan.outputs.kind == 'lts' }}
       # Every OSS version is a milestone of the commercial repository too, due when the OSS one is,
       # and following it if that changes: the issues of the fixes that only customers get (for a CVE)
-      # need the milestone of the version. It is made once the OSS milestone has a due date.
+      # need the milestone of the version. It is made once the OSS milestone has a due date, and
+      # its description says that it is the OSS one, with a link to it (only when it is created).
       - name: Make the milestone of the OSS version in the commercial repository
         if: steps.plan.outputs.kind == 'frozen' && steps.release.outputs.found == 'true'
         uses: spring-io/spring-security-actions/ensure-milestone@bf1de14a7ac49ab0160b6a7d73a6dc36032e27a6 # 0.0.17
@@ -200,6 +201,7 @@ jobs:
           repository: ${{ github.repository }}
           milestone: ${{ steps.release.outputs.release-version }}
           due-date: ${{ steps.release.outputs.due-date }}
+          description: ${{ format('OSS milestone: {0}', steps.release.outputs.milestone-url) }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       # The milestone of the hotfix is there now. Without a due date on the OSS milestone that it
       # fixes, the hotfix has no release train, and the run stops: the same action asks for the
@@ -363,8 +365,10 @@ jobs:
           release-versions-file: ${{ steps.train.outputs.release-versions-file }}
           train-file: ${{ steps.train.outputs.train-file }}
           prefer-hotfix: ${{ env.HOTFIX }}
-      # An issue that someone closed is a decision to leave the update: it is said in a
-      # notice, and is not in the updates.
+      # The issues of a frozen branch are in the OSS repository, in the OSS milestone, and are left open:
+      # their commits close them when they are merged. Those of a hotfix or of an LTS version are in this
+      # repository, and are created closed, as their commits are made below. An update that left the train
+      # since an earlier run is taken out of the milestone, with a comment.
       - name: Make sure that there are issues
         id: issues
         if: steps.train.outputs.found == 'true'
@@ -373,6 +377,7 @@ jobs:
           versions: ${{ steps.versions.outputs.versions }}
           repository: ${{ env.KIND != 'frozen' && github.repository || needs.plan.outputs.oss-repository }}
           milestone: ${{ needs.plan.outputs.release-version }}
+          close: ${{ env.KIND != 'frozen' }}
           labels: "type: dependency-upgrade"
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Update the dependencies of the release

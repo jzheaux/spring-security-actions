@@ -2,7 +2,7 @@
   "name": "ensure-dependency-issues",
   "version": "0.0.1",
   "private": true,
-  "description": "Makes sure that every dependency update has an issue in a milestone, and creates the ones that are missing. An issue that exists, open or closed, is not created again",
+  "description": "Makes sure that every dependency update has an issue in a milestone, and creates the ones that are missing, without a body (and closed, unless told not to), and takes the ones that are not in the release train any more out of the milestone",
   "type": "module",
   "engines": {
     "node": ">=24"
