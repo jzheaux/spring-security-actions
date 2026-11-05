@@ -1,0 +1,21 @@
+name: "delete-branches"
+description: "Deletes branches of a repository at once, or none (git push --atomic --delete)"
+
+inputs:
+  repository:
+    description: "The repository (owner/repo) to delete the branches of."
+    required: true
+  branches:
+    description: "The branches to delete, one per line, without refs/heads/."
+    required: true
+  token:
+    description: "A token that may push to the repository (contents write)."
+    required: true
+
+outputs:
+  deleted:
+    description: "The branches that were deleted, one per line."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"
