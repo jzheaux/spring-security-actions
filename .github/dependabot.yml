@@ -11,6 +11,7 @@ updates:
       - /compute-build-environment
       - /compute-release-version
       - /compute-secret-names
+      - /compute-tag-versions
       - /deploy-artifacts
       - /ensure-artifacts
       - /ensure-dependency-issues
@@ -43,6 +44,7 @@ updates:
       - /check-not-ready
       - /close-milestones
       - /compute-release-version
+      - /compute-tag-versions
       - /ensure-dependency-issues
       - /freeze-summary
       - /git-identity

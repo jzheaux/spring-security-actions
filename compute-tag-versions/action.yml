@@ -1,0 +1,17 @@
+name: "compute-tag-versions"
+description: "Works out the release version and the snapshot version of a tag"
+
+inputs:
+  tag:
+    description: "The tag, for example v7.0.1, 7.1.0-RC1 or v7.1.0-M2"
+    required: true
+
+outputs:
+  release-version:
+    description: "The tag without its leading v, for example 7.0.1 or 7.1.0-RC1"
+  snapshot-version:
+    description: "The release version without its -M<n> or -RC<n>, and with -SNAPSHOT, for example 7.0.1-SNAPSHOT or 7.1.0-SNAPSHOT"
+
+runs:
+  using: "node24"
+  main: "dist/index.js"
