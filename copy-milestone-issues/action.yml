@@ -1,0 +1,30 @@
+name: "copy-milestone-issues"
+description: "Copies the issues and the pull requests of a milestone of a repository to another repository, as issues, and comments on each original with the link to its copy"
+
+inputs:
+  source-repository:
+    description: "The repository (owner/repo) that has the milestone, whose issues and pull requests are copied. Each one gets a comment with the link to its copy."
+    required: true
+  destination-repository:
+    description: "The repository (owner/repo) that the issues are copied to. It needs a milestone of the same title, and the users that are assigned in the source need to be assignable in it."
+    required: true
+  milestone:
+    description: "The title of the milestone in both repositories, for example `7.0.1`."
+    required: true
+  omit-body:
+    description: "true to copy the issues without their body. Everything else is copied. The default, false, copies the body as it is."
+    required: false
+    default: "false"
+  token:
+    description: "A token that can read and comment on the issues and the pull requests of the source repository, and write the issues of the destination repository."
+    required: true
+
+outputs:
+  copied:
+    description: "The number of issues and pull requests that were copied."
+  skipped:
+    description: "The number of issues and pull requests that were not copied, as their original has the comment with the link to a copy already."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

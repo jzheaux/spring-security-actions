@@ -18,6 +18,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`compare-branches`](compare-branches/README.md) | Whether a branch has changes that another branch lacks: a hotfix is only built for an active embargoed branch that differs from the frozen one. |
 | [`close-milestones`](close-milestones/README.md) | Closes the milestone of each release of a code freeze, and deletes the milestone of a hotfix that has no issues. |
 | [`compute-release-version`](compute-release-version/README.md) | The release version of a snapshot version, and its due date, from the milestones of a repository. |
+| [`copy-milestone-issues`](copy-milestone-issues/README.md) | Copies the issues and the pull requests of a milestone to another repository, as issues, and comments on each original with the link to its copy. |
 | [`ensure-dependency-issues`](ensure-dependency-issues/README.md) | An issue for every dependency update, in a milestone. It makes the ones that are missing. |
 | [`ensure-milestone`](ensure-milestone/README.md) | Creates a milestone in a repository if it has none of that title, with no due date. |
 | [`freeze-summary`](freeze-summary/README.md) | Writes the summary of a code freeze. |
