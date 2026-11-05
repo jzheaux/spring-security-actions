@@ -1,0 +1,21 @@
+name: "close-milestones"
+description: "Closes the milestone of each release of a code freeze, and deletes the milestone of a hotfix that has no issues"
+
+inputs:
+  plan-file:
+    description: "The plan of the freeze (the output `plan-file` of `plan-freeze`), which has the milestone of each release. code-freeze/plan.json in RUNNER_TEMP by default."
+    required: false
+  milestones-file:
+    description: "Where to write what was done to each milestone, as JSON. code-freeze/milestones.json in RUNNER_TEMP by default."
+    required: false
+  token:
+    description: "A token that may write the milestones of the OSS and of the commercial repository (Issues: Read and write)."
+    required: true
+
+outputs:
+  milestones-file:
+    description: "The file with the result for each milestone, as JSON: closed, closed-with-open, already-closed, deleted or failed."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"
