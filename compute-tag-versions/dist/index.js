@@ -31629,20 +31629,22 @@ async function execute(action) {
 /**
  * Works out the versions of a tag. A leading v is not part of the release version (v7.0.1
  * releases 7.0.1). The snapshot version is that release version, without its milestone or
- * release candidate (-M1, -RC2), and with -SNAPSHOT: 7.1.0-RC2 is followed by 7.1.0-SNAPSHOT.
+ * release candidate (-M1, -RC2), and with the snapshot suffix (-SNAPSHOT unless told
+ * otherwise): 7.1.0-RC2 is followed by 7.1.0-SNAPSHOT, or by 7.1.0-INTERNAL-SNAPSHOT.
  */
-function computeTagVersions(tag) {
+function computeTagVersions(tag, snapshotSuffix = "-SNAPSHOT") {
   const releaseVersion = (tag ?? "").trim().replace(/^v/, "");
   if (!releaseVersion) {
     throw new Error(`${tag} is not a tag to take a version from`);
   }
   const base = releaseVersion.replace(/-(?:M|RC)\d+$/, "");
-  return { releaseVersion, snapshotVersion: `${base}-SNAPSHOT` };
+  return { releaseVersion, snapshotVersion: `${base}${snapshotSuffix}` };
 }
 
 async function main() {
   const { releaseVersion, snapshotVersion } = computeTagVersions(
     getInput("tag", { required: true }),
+    getInput("snapshot-suffix") || "-SNAPSHOT",
   );
   info(`release-version: ${releaseVersion}`);
   info(`snapshot-version: ${snapshotVersion}`);

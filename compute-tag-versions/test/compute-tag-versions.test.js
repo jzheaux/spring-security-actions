@@ -19,6 +19,16 @@ describe("computeTagVersions", () => {
     });
   });
 
+  it.each([
+    ["v7.0.1", "-INTERNAL-SNAPSHOT", "7.0.1-INTERNAL-SNAPSHOT"],
+    ["7.1.0-RC1", "-INTERNAL-SNAPSHOT", "7.1.0-INTERNAL-SNAPSHOT"],
+    ["v7.1.0-M2", "-INTERNAL-SNAPSHOT", "7.1.0-INTERNAL-SNAPSHOT"],
+  ])("takes %s with the suffix %s", (tag, suffix, snapshotVersion) => {
+    expect(computeTagVersions(tag, suffix).snapshotVersion).toBe(
+      snapshotVersion,
+    );
+  });
+
   it.each([[""], ["v"], [undefined]])("rejects %j", (tag) => {
     expect(() => computeTagVersions(tag)).toThrow(/not a tag/);
   });
@@ -31,6 +41,18 @@ describe("the action", () => {
     expect(result.outputs).toEqual({
       "release-version": "7.1.0-RC1",
       "snapshot-version": "7.1.0-SNAPSHOT",
+    });
+  });
+
+  it("sets the snapshot version with -INTERNAL-SNAPSHOT", async () => {
+    const result = await runAction("src/index.js", {
+      tag: "v7.0.1",
+      "snapshot-suffix": "-INTERNAL-SNAPSHOT",
+    });
+    expect(result.code).toBe(0);
+    expect(result.outputs).toEqual({
+      "release-version": "7.0.1",
+      "snapshot-version": "7.0.1-INTERNAL-SNAPSHOT",
     });
   });
 
