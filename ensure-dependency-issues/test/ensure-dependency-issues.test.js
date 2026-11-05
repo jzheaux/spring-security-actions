@@ -3,7 +3,7 @@ import {
   ensureIssues,
   issueTitle,
   parseLabels,
-  splitClosed,
+  updatesToMake,
   updatesOf,
 } from "../src/index.js";
 import { createOctokit } from "../src/octokit.js";
@@ -48,28 +48,21 @@ describe("parseLabels", () => {
   });
 });
 
-describe("splitClosed", () => {
-  const issue = (version, number, closed) => ({
-    version,
-    issue: number,
-    existed: true,
-    closed,
-  });
-
-  it("keeps the updates that are not closed, with version and issue only", () => {
+describe("updatesToMake", () => {
+  it("keeps the version and the issue only", () => {
     expect(
-      splitClosed({
-        micrometer: issue("1.16.8", 40, true),
-        "spring-framework": issue("7.0.10", 41, false),
+      updatesToMake({
+        micrometer: { version: "1.16.8", issue: 40, existed: true },
+        "spring-framework": { version: "7.0.10", issue: 41, existed: false },
       }),
     ).toEqual({
-      updates: { "spring-framework": { version: "7.0.10", issue: 41 } },
-      left: [{ dependency: "micrometer", version: "1.16.8", issue: 40 }],
+      micrometer: { version: "1.16.8", issue: 40 },
+      "spring-framework": { version: "7.0.10", issue: 41 },
     });
   });
 
-  it("has nothing left alone, and nothing to update, for nothing", () => {
-    expect(splitClosed({})).toEqual({ updates: {}, left: [] });
+  it("is nothing for nothing", () => {
+    expect(updatesToMake({})).toEqual({});
   });
 });
 
@@ -101,7 +94,7 @@ describe("ensureIssues", () => {
   const ensure = async (options = {}, { issues = [], token } = {}) => {
     fake = await startFakeGitHub({ issues });
     const log = [];
-    const result = await ensureIssues(
+    const { issues: result, removed } = await ensureIssues(
       {
         repository: REPO,
         milestone: "7.0.1",
@@ -113,7 +106,7 @@ describe("ensureIssues", () => {
         log: (l) => log.push(l),
       },
     );
-    return { result, log };
+    return { result, log, removed };
   };
 
   it("creates the issues that are missing, in the milestone", async () => {
@@ -123,24 +116,32 @@ describe("ensureIssues", () => {
         version: "1.16.8",
         issue: 1,
         existed: false,
-        closed: false,
       },
       "spring-framework": {
         version: "7.0.10",
         issue: 2,
         existed: false,
-        closed: false,
       },
     });
     expect(fake.issues).toHaveLength(2);
     expect(fake.issues[0]).toMatchObject({
       title: "Update micrometer to 1.16.8",
-      state: "open",
+      state: "closed",
       milestone: { number: M_7_0_1, title: "7.0.1" },
       labels: [{ name: "type: dependency-upgrade" }],
     });
-    expect(fake.issues[0].body).toContain("`micrometer`");
-    expect(fake.issues[0].body).toContain("`1.16.8`");
+    expect(fake.issues[1].state).toBe("closed");
+    // no body
+    const created = fake.requests.find((r) => r.method === "POST");
+    expect(created.body).not.toHaveProperty("body");
+  });
+
+  it("leaves the issues that it creates open for close false", async () => {
+    const { result, log } = await ensure({ close: false });
+    expect(result.micrometer).toMatchObject({ issue: 1, existed: false });
+    expect(fake.issues.map((i) => i.state)).toEqual(["open", "open"]);
+    expect(fake.requests.some((r) => r.method === "PATCH")).toBe(false);
+    expect(log).toContain("micrometer 1.16.8: issue 1 created");
   });
 
   it("does not make an issue that exists, open", async () => {
@@ -157,7 +158,6 @@ describe("ensureIssues", () => {
       version: "7.0.10",
       issue: 40,
       existed: true,
-      closed: false,
     });
     expect(result.micrometer.issue).toBe(41);
     expect(fake.issues).toHaveLength(2); // none created
@@ -165,7 +165,7 @@ describe("ensureIssues", () => {
     expect(log).toContain("spring-framework 7.0.10: issue 40 exists");
   });
 
-  it("does not make an issue that exists, closed, and says that it is closed", async () => {
+  it("does not make an issue that exists, closed", async () => {
     const { result, log } = await ensure(
       {},
       { issues: [issue(40, "Update spring-framework to 7.0.10", "closed")] },
@@ -174,20 +174,91 @@ describe("ensureIssues", () => {
       version: "7.0.10",
       issue: 40,
       existed: true,
-      closed: true,
     });
     expect(result.micrometer.existed).toBe(false); // the other was created
     expect(
       fake.issues.filter((i) => i.title.includes("spring-framework")),
     ).toHaveLength(1);
-    expect(log).toContain(
-      "spring-framework 7.0.10: issue 40 exists, and is closed",
-    );
+    expect(log).toContain("spring-framework 7.0.10: issue 40 exists");
+  });
+
+  describe("an update that is not in the train any more", () => {
+    const labelled = (number, title, milestone = M_7_0_1) =>
+      issue(number, title, "closed", milestone, {
+        labels: [{ name: "type: dependency-upgrade" }],
+      });
+
+    it("is commented on, and taken out of the milestone", async () => {
+      const { removed } = await ensure(
+        { labels: ["type: dependency-upgrade"] },
+        { issues: [labelled(40, "Update jackson to 2.20.0")] },
+      );
+      expect(removed).toEqual([
+        { issue: 40, title: "Update jackson to 2.20.0" },
+      ]);
+      expect(fake.comments).toEqual([
+        {
+          issue: 40,
+          body: "Removed from the milestone 7.0.1 because `jackson 2.20.0` was not found in the release train on the latest run.",
+        },
+      ]);
+      expect(fake.issues[0].milestone).toBeNull();
+    });
+
+    it("is not found again by a run that is done again", async () => {
+      await ensure(
+        { labels: ["type: dependency-upgrade"] },
+        { issues: [labelled(40, "Update jackson to 2.20.0")] },
+      );
+      const second = await ensureIssues(
+        {
+          repository: REPO,
+          milestone: "7.0.1",
+          versions: { "spring-framework": "7.0.10", micrometer: "1.16.8" },
+          labels: ["type: dependency-upgrade"],
+        },
+        { octokit: createOctokit({ baseUrl: fake.url }) },
+      );
+      expect(second.removed).toEqual([]);
+      expect(fake.comments).toHaveLength(1);
+    });
+
+    it("is the old version of a dependency that has a new one", async () => {
+      const { removed } = await ensure(
+        { labels: ["type: dependency-upgrade"] },
+        { issues: [labelled(40, "Update micrometer to 1.16.7")] },
+      );
+      expect(removed).toHaveLength(1);
+    });
+
+    it("is left in the milestone if it is an update of the train", async () => {
+      const { removed } = await ensure(
+        { labels: ["type: dependency-upgrade"] },
+        { issues: [labelled(40, "Update micrometer to 1.16.8")] },
+      );
+      expect(removed).toEqual([]);
+      expect(fake.comments).toEqual([]);
+    });
+
+    it("is left alone if it has not the labels, or is not the title of an update", async () => {
+      const { removed } = await ensure(
+        { labels: ["type: dependency-upgrade"] },
+        {
+          issues: [
+            issue(40, "Update jackson to 2.20.0", "closed"),
+            labelled(41, "Fix the build"),
+            labelled(42, "Update jackson to 2.20.0", M_7_0_2),
+          ],
+        },
+      );
+      expect(removed).toEqual([]);
+      expect(fake.comments).toEqual([]);
+    });
   });
 
   it("is done again without making another", async () => {
     const first = await ensure();
-    const second = await ensureIssues(
+    const { issues: second } = await ensureIssues(
       {
         repository: REPO,
         milestone: "7.0.1",
@@ -258,7 +329,7 @@ describe("ensureIssues", () => {
       { versions: { micrometer: "1.16.8" } },
       { issues: [issue(53, title, "closed"), issue(52, title, "closed")] },
     ));
-    expect(result.micrometer).toMatchObject({ issue: 52, closed: true });
+    expect(result.micrometer).toMatchObject({ issue: 52 });
   });
 
   it("finds an issue on another page", async () => {
@@ -333,7 +404,7 @@ describe("ensureIssues", () => {
       fake.lag = 2; // the new issue is not in the next two lists
       const sleeps = [];
       const warnings = [];
-      const result = await ensureIssues(
+      const { issues: result } = await ensureIssues(
         { repository: REPO, milestone: "7.0.1", versions },
         deps(sleeps, warnings),
       );
@@ -357,7 +428,7 @@ describe("ensureIssues", () => {
       fake.lag = 100;
       const sleeps = [];
       const warnings = [];
-      const result = await ensureIssues(
+      const { issues: result } = await ensureIssues(
         { repository: REPO, milestone: "7.0.1", versions },
         deps(sleeps, warnings),
       );
@@ -386,7 +457,7 @@ describe("ensureIssues", () => {
       fake = await startFakeGitHub();
       fake.lag = 1;
       const sleeps = [];
-      const result = await ensureIssues(
+      const { issues: result } = await ensureIssues(
         {
           repository: REPO,
           milestone: "7.0.1",
@@ -480,7 +551,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       ...more,
     });
 
-    it("creates the issues and writes them as an output", async () => {
+    it("creates the issues, closes them, and writes them as an output", async () => {
       fake = await startFakeGitHub({
         issues: [issue(40, "Update micrometer to 1.16.8", "closed")],
       });
@@ -490,28 +561,29 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       expect(result.code).toBe(0);
       expect(result.outputs.count).toBe("2");
       expect(JSON.parse(result.outputs.issues)).toEqual({
-        micrometer: {
-          version: "1.16.8",
-          issue: 40,
-          existed: true,
-          closed: true,
-        },
-        "spring-framework": {
-          version: "7.0.10",
-          issue: 41,
-          existed: false,
-          closed: false,
-        },
+        micrometer: { version: "1.16.8", issue: 40, existed: true },
+        "spring-framework": { version: "7.0.10", issue: 41, existed: false },
       });
-      expect(fake.issues.at(-1).labels).toEqual([
-        { name: "type: dependency-upgrade" },
-      ]);
+      expect(fake.issues.at(-1)).toMatchObject({
+        state: "closed",
+        labels: [{ name: "type: dependency-upgrade" }],
+      });
       expect(result.stdout).toContain(
-        "2 issues: 1 created, 0 open already, 1 closed",
+        "2 issues: 1 created and closed, 1 there already, 0 removed from the milestone",
       );
     });
 
-    it("gives the updates that are not closed as an output, and says the ones that are left alone", async () => {
+    it("leaves the issues open for the input close false", async () => {
+      fake = await startFakeGitHub();
+      const result = await runAction(entry, inputs({ close: "false" }), {
+        GITHUB_API_URL: fake.url,
+      });
+      expect(result.code).toBe(0);
+      expect(fake.issues.map((i) => i.state)).toEqual(["open", "open"]);
+      expect(result.stdout).toContain("2 issues: 2 created, 0 there already");
+    });
+
+    it("gives every update as an output", async () => {
       fake = await startFakeGitHub({
         issues: [issue(40, "Update micrometer to 1.16.8", "closed")],
       });
@@ -519,23 +591,29 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         GITHUB_API_URL: fake.url,
       });
       expect(JSON.parse(result.outputs.updates)).toEqual({
+        micrometer: { version: "1.16.8", issue: 40 },
         "spring-framework": { version: "7.0.10", issue: 41 },
       });
-      expect(result.stdout).toContain(
-        "::notice title=Left alone::micrometer 1.16.8 is left alone: its issue #40 is closed",
-      );
     });
 
-    it("gives every update when none is closed, and says nothing is left alone", async () => {
-      fake = await startFakeGitHub();
+    it("says the issues that are taken out of the milestone", async () => {
+      fake = await startFakeGitHub({
+        issues: [
+          issue(40, "Update jackson to 2.20.0", "closed", M_7_0_1, {
+            labels: [{ name: "type: dependency-upgrade" }],
+          }),
+        ],
+      });
       const result = await runAction(entry, inputs(), {
         GITHUB_API_URL: fake.url,
       });
-      expect(Object.keys(JSON.parse(result.outputs.updates))).toEqual([
-        "micrometer",
-        "spring-framework",
+      expect(JSON.parse(result.outputs.removed)).toEqual([
+        { issue: 40, title: "Update jackson to 2.20.0" },
       ]);
-      expect(result.stdout).not.toContain("is left alone");
+      expect(result.stdout).toContain(
+        '::notice title=Removed from the milestone::"Update jackson to 2.20.0" (#40) is not in the release train any more: removed from the milestone',
+      );
+      expect(fake.comments).toHaveLength(1);
     });
 
     it("fails with an error that GitHub shows, and creates nothing", async () => {

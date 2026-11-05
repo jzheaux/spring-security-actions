@@ -10,9 +10,8 @@ export function issueTitle(dependency, version) {
   return `Update ${dependency} to ${version}`;
 }
 
-function issueBody(dependency, version) {
-  return `Update the version of \`${dependency}\` to \`${version}\`, the version of the release train.`;
-}
+// What an issue of an update is called: the title that issueTitle writes.
+const TITLE = /^Update (\S+) to (\S+)$/;
 
 /** A list of labels, separated by commas or lines, without the empty ones. */
 export function parseLabels(text) {
@@ -65,12 +64,17 @@ const pause = (milliseconds) =>
 /**
  * Makes sure that every update has an issue in the milestone of a repository: the issue
  * that has its title in that milestone is the one of the update, open or closed, and
- * only if there is none, one is created. So a run that is done again does not make
- * another, and neither does an issue that someone closed: it is the decision to leave
- * the update, and it is for the caller to leave it (closed is in the result).
+ * only if there is none, one is created, without a body. With close, it is closed at
+ * once: for a hotfix the commit of the update is made already, so there is nothing left
+ * to do for it. Without it, it is left open for its commit to close. A run that is done
+ * again does not make another.
+ *
+ * An issue of an update (its title is that of one, and it has the labels) that is in the
+ * milestone, and is not one of the updates, is not in the release train any more: it gets
+ * a comment that says so, and is taken out of the milestone.
  *
  * It returns the updates with the number of their issue, and whether it existed, and
- * whether it is closed.
+ * the issues that were taken out of the milestone.
  *
  * GitHub lists a new issue a few seconds after it is created (2 to 5 seconds, measured).
  * A run that comes right after another one, after a cancelled run for example, would not
@@ -78,7 +82,7 @@ const pause = (milliseconds) =>
  * until the list has them, up to attempts times intervalMs, and warns if it has not.
  */
 export async function ensureIssues(
-  { repository, milestone, versions, labels = [], type = "" },
+  { repository, milestone, versions, labels = [], type = "", close = true },
   {
     octokit,
     log = () => {},
@@ -110,9 +114,11 @@ export async function ensureIssues(
   const existing = await listIssues(octokit, target, milestone, found.number);
 
   const issues = {};
+  const wanted = new Set();
   const createdNumbers = [];
   for (const { dependency, version } of updates) {
     const title = issueTitle(dependency, version);
+    wanted.add(title);
     // More than one with the same title is not meant to be: take an open one, and else
     // the first.
     const same = existing
@@ -124,11 +130,8 @@ export async function ensureIssues(
         version,
         issue: issue.number,
         existed: true,
-        closed: issue.state === "closed",
       };
-      log(
-        `${dependency} ${version}: issue ${issue.number} exists${issue.state === "closed" ? ", and is closed" : ""}`,
-      );
+      log(`${dependency} ${version}: issue ${issue.number} exists`);
       continue;
     }
     const { data: created } = await call(
@@ -136,20 +139,31 @@ export async function ensureIssues(
       octokit.rest.issues.create({
         ...target,
         title,
-        body: issueBody(dependency, version),
         milestone: found.number,
         ...(labels.length > 0 && { labels }),
         ...(type && { type }),
       }),
     );
+    if (close) {
+      await call(
+        `Closing the issue #${created.number} of ${repository}`,
+        octokit.rest.issues.update({
+          ...target,
+          issue_number: created.number,
+          state: "closed",
+          state_reason: "completed",
+        }),
+      );
+    }
     issues[dependency] = {
       version,
       issue: created.number,
       existed: false,
-      closed: false,
     };
     createdNumbers.push(created.number);
-    log(`${dependency} ${version}: issue ${created.number} created`);
+    log(
+      `${dependency} ${version}: issue ${created.number} created${close ? " and closed" : ""}`,
+    );
   }
 
   if (createdNumbers.length > 0) {
@@ -171,28 +185,52 @@ export async function ensureIssues(
       );
     }
   }
-  return issues;
+  const removed = [];
+  for (const issue of existing) {
+    if (wanted.has(issue.title) || !TITLE.test(issue.title)) {
+      continue;
+    }
+    const names = (issue.labels ?? []).map((l) =>
+      typeof l === "string" ? l : l.name,
+    );
+    if (!labels.every((label) => names.includes(label))) {
+      continue;
+    }
+    await call(
+      `Commenting on the issue #${issue.number} of ${repository}`,
+      octokit.rest.issues.createComment({
+        ...target,
+        issue_number: issue.number,
+        body: `Removed from the milestone ${milestone} because \`${issue.title.replace(TITLE, "$1 $2")}\` was not found in the release train on the latest run.`,
+      }),
+    );
+    await call(
+      `Taking the issue #${issue.number} of ${repository} out of the milestone ${milestone}`,
+      octokit.rest.issues.update({
+        ...target,
+        issue_number: issue.number,
+        milestone: null,
+      }),
+    );
+    removed.push({ issue: issue.number, title: issue.title });
+    log(
+      `${issue.title}: issue ${issue.number} is not in the train, removed from the milestone`,
+    );
+  }
+  return { issues, removed };
 }
 
 /**
- * The updates to make, from the issues that ensureIssues returns: an issue that someone
- * closed is a decision to leave the update, so those are left out. It returns the updates
- * as update-versions takes them (an object from the name to { version, issue }), and the
- * names that are left alone.
+ * The updates to make, from the issues that ensureIssues returns, as update-versions takes
+ * them: an object from the name to { version, issue }.
  */
-export function splitClosed(issues) {
-  const updates = {};
-  const left = [];
-  for (const [dependency, { version, issue, closed }] of Object.entries(
-    issues,
-  )) {
-    if (closed) {
-      left.push({ dependency, version, issue });
-    } else {
-      updates[dependency] = { version, issue };
-    }
-  }
-  return { updates, left };
+export function updatesToMake(issues) {
+  return Object.fromEntries(
+    Object.entries(issues).map(([dependency, { version, issue }]) => [
+      dependency,
+      { version, issue },
+    ]),
+  );
 }
 
 export async function main() {
@@ -202,14 +240,16 @@ export async function main() {
   } catch (error) {
     throw new Error(`The input versions is not JSON: ${error.message}`);
   }
+  const close = core.getInput("close") !== "false";
   const octokit = createOctokit({ token: core.getInput("token") });
-  const issues = await ensureIssues(
+  const { issues, removed } = await ensureIssues(
     {
       repository: core.getInput("repository", { required: true }),
       milestone: core.getInput("milestone", { required: true }),
       versions,
       labels: parseLabels(core.getInput("labels")),
       type: core.getInput("type"),
+      close,
     },
     {
       octokit,
@@ -219,17 +259,17 @@ export async function main() {
   );
   const all = Object.values(issues);
   core.info(
-    `${all.length} issues: ${all.filter((i) => !i.existed).length} created, ${all.filter((i) => i.existed && !i.closed).length} open already, ${all.filter((i) => i.closed).length} closed`,
+    `${all.length} issues: ${all.filter((i) => !i.existed).length} created${close ? " and closed" : ""}, ${all.filter((i) => i.existed).length} there already, ${removed.length} removed from the milestone`,
   );
-  const { updates, left } = splitClosed(issues);
-  for (const { dependency, version, issue } of left) {
+  for (const { issue, title } of removed) {
     core.notice(
-      `${dependency} ${version} is left alone: its issue #${issue} is closed`,
-      { title: "Left alone" },
+      `"${title}" (#${issue}) is not in the release train any more: removed from the milestone`,
+      { title: "Removed from the milestone" },
     );
   }
   core.setOutput("issues", JSON.stringify(issues));
-  core.setOutput("updates", JSON.stringify(updates));
+  core.setOutput("updates", JSON.stringify(updatesToMake(issues)));
+  core.setOutput("removed", JSON.stringify(removed));
   core.setOutput("count", String(all.length));
 }
 

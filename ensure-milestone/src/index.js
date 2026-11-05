@@ -7,13 +7,14 @@ const NOON = "T12:00:00Z";
 
 /**
  * Makes sure that a repository has a milestone of a title, open or closed. If there is
- * none, it is created with the title, and the due date if there is one: no description.
+ * none, it is created with the title, and the due date and the description if there are
+ * any. The description is only for a milestone that is created: one that exists is not given it.
  * With a due date (YYYY-MM-DD), the milestone is due that day, at noon UTC: one that is due
  * another day, or has none, is changed, so that it follows the milestone that the date is of.
  * Without one, a milestone that exists is not changed. It returns { created, changed, url }.
  */
 export async function run(
-  { repository, milestone, dueDate = "" },
+  { repository, milestone, dueDate = "", description = "" },
   { octokit },
 ) {
   if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
@@ -57,6 +58,7 @@ export async function run(
       owner,
       repo,
       title: milestone,
+      ...(description && { description }),
       ...(dueDate && { due_on: `${dueDate}${NOON}` }),
     }),
   );
@@ -67,8 +69,12 @@ export async function main() {
   const repository = core.getInput("repository", { required: true });
   const milestone = core.getInput("milestone", { required: true });
   const dueDate = core.getInput("due-date");
+  const description = core.getInput("description");
   const octokit = createOctokit({ token: core.getInput("token") });
-  const result = await run({ repository, milestone, dueDate }, { octokit });
+  const result = await run(
+    { repository, milestone, dueDate, description },
+    { octokit },
+  );
   core.setOutput("created", String(result.created));
   core.setOutput("changed", String(result.changed));
   core.setOutput("milestone-url", result.url);

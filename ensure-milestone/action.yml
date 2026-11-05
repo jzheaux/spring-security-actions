@@ -11,6 +11,9 @@ inputs:
   due-date:
     description: "The due date of the milestone, YYYY-MM-DD, at noon UTC. A milestone that is due another day, or has none, is changed to it. Without it, a milestone that exists is not changed, and one that is created has none."
     required: false
+  description:
+    description: "The description of the milestone, only if it is created: a milestone that exists keeps its own."
+    required: false
   token:
     description: "A token that may write the milestones of the repository."
     required: true

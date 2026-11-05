@@ -1,5 +1,5 @@
 name: "ensure-dependency-issues"
-description: "Makes sure that every dependency update has an issue in a milestone, and creates the ones that are missing. An issue that exists, open or closed, is not created again"
+description: "Makes sure that every dependency update has an issue in a milestone, and creates the ones that are missing, without a body (and closed, unless told not to), and takes the ones that are not in the release train any more out of the milestone"
 
 inputs:
   versions:
@@ -12,20 +12,26 @@ inputs:
     description: "The title of the milestone that the issues are in, for example the release version"
     required: true
   labels:
-    description: "The labels of the issues that are created, separated by commas or lines, for example: type: dependency-upgrade"
+    description: "The labels of the issues that are created, and that an issue needs to be taken out of the milestone, separated by commas or lines, for example: type: dependency-upgrade"
     required: false
   type:
     description: "The issue type of the issues that are created (for a repository of an organization that has issue types)"
     required: false
+  close:
+    description: "Whether an issue is closed when it is created: true (the default) for the issues of updates whose commits are made already, such as a hotfix, false to leave it open for its commit to close"
+    required: false
+    default: "true"
   token:
     description: "A token that can read and create issues in the repository"
     required: true
 
 outputs:
   issues:
-    description: "A JSON object from the name of a dependency to { version, issue, existed, closed }: the number of its issue, whether the issue existed before, and whether it is closed"
+    description: "A JSON object from the name of a dependency to { version, issue, existed }: the number of its issue, and whether the issue existed before"
   updates:
-    description: "The updates to make, as a JSON object from the name of a dependency to { version, issue }, as update-versions takes it: the issues without the closed ones. An issue that someone closed is a decision to leave the update, and each is said in a notice"
+    description: "The updates to make, as a JSON object from the name of a dependency to { version, issue }, as update-versions takes it"
+  removed:
+    description: "The issues that were taken out of the milestone because their update is not in the release train any more, as a JSON list of { issue, title }. Each is said in a notice"
   count:
     description: "How many issues there are"
 

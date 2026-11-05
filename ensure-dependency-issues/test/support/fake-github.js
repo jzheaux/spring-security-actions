@@ -22,6 +22,8 @@ export const defaultTrains = path.join(here, "..", "fixtures", "train");
  *   GET  /repos/<owner>/<repo>/contents/<path>?ref=<branch> a file of a branch
  *   GET  /repos/<owner>/<repo>/issues?milestone=&state=     the issues (and pull requests)
  *   POST /repos/<owner>/<repo>/issues                       a new issue
+ *   PATCH /repos/<owner>/<repo>/issues/<n>                  state, milestone (null takes it out)
+ *   POST /repos/<owner>/<repo>/issues/<n>/comments          a comment, kept in `comments`
  *
  * Every repository is the same: it has the milestones and the issues, and it has one
  * branch for every directory of `trains`, with the files of that directory. Only
@@ -46,6 +48,7 @@ export async function startFakeGitHub({
   const fake = {
     issues: [...issues],
     requests,
+    comments: [],
     createFailure: undefined,
     lag: 0,
     listRequests: 0,
@@ -159,6 +162,31 @@ export async function startFakeGitHub({
         fake.hiddenUntil.set(number, fake.listRequests + fake.lag);
       }
       return send(201, issue);
+    }
+
+    const edited = rest.match(/^\/issues\/(\d+)$/);
+    if (edited && request.method === "PATCH") {
+      const found = fake.issues.find((i) => i.number === Number(edited[1]));
+      if (!found) {
+        return notFound();
+      }
+      if (body.state) {
+        found.state = body.state;
+      }
+      if ("milestone" in body) {
+        const target = allMilestones.find((m) => m.number === body.milestone);
+        found.milestone = target
+          ? { number: target.number, title: target.title }
+          : null;
+      }
+      return send(200, found);
+    }
+
+    const commented = rest.match(/^\/issues\/(\d+)\/comments$/);
+    if (commented && request.method === "POST") {
+      const comment = { issue: Number(commented[1]), body: body?.body };
+      fake.comments.push(comment);
+      return send(201, comment);
     }
 
     const branch = rest.match(/^\/branches\/(.+)$/);
