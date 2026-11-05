@@ -16,6 +16,8 @@ name: code-freeze
 #      be accepted (git push --dry-run). A dry run ends here.
 #   4. Ready: release-train-ready.yml of the project runs on each release branch, and is waited for.
 #   5. Push: the commercial repository, then OSS, each in one atomic push, without force.
+#   6. Milestones: the milestone of each release is closed, and that of a hotfix with no issues is
+#      deleted. This is last, so that a failed push leaves them open.
 #
 # This is a reusable workflow: the commercial repository of a project calls it from a workflow
 # that is run by hand (workflow_dispatch), see docs/code-freeze.md for the caller, the stub that
@@ -52,7 +54,7 @@ on:
         default: ubuntu-latest
     secrets:
       RELEASE_AUTOMATION_TOKEN:
-        description: "The token that checks out and pushes the commercial repository, fetches and pushes the OSS repository, reads the release train and the milestones of both, and runs release-train-ready.yml on the release branches (Actions: Read and write)"
+        description: "The token that checks out and pushes the commercial repository, fetches and pushes the OSS repository, reads the release train and writes the milestones of both (Issues: Read and write), and runs release-train-ready.yml on the release branches (Actions: Read and write)"
         required: true
 
 permissions:
@@ -121,6 +123,13 @@ jobs:
         uses: spring-io/spring-security-actions/push-freeze@3b23d9ab66bccb216f8a325f551466ed62b3c4e4 # 0.0.18
         with:
           mode: push
+      # Last, so that a push that failed leaves the milestones open and the freeze can run again. A hotfix
+      # milestone with no issues is deleted, and the others are closed, with open issues too.
+      - name: Close the milestones of the releases
+        if: ${{ !inputs.dry-run }}
+        uses: spring-io/spring-security-actions/close-milestones@3b23d9ab66bccb216f8a325f551466ed62b3c4e4 # 0.0.18
+        with:
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Summarize the freeze
         if: ${{ always() }}
         uses: spring-io/spring-security-actions/freeze-summary@3b23d9ab66bccb216f8a325f551466ed62b3c4e4 # 0.0.18

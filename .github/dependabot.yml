@@ -41,6 +41,7 @@ updates:
       - /apply-commercial-license
       - /apply-freeze
       - /check-not-ready
+      - /close-milestones
       - /compute-release-version
       - /ensure-dependency-issues
       - /freeze-summary
