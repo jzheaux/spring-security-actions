@@ -39,16 +39,46 @@ const plan = {
       version: "7.0.5",
       branch: "release/7.0.5",
       of: ["7.0.x", "embargoed/frozen/7.0.x"],
+      hotfix: false,
+      milestone: {
+        repository: "spring-projects/spring-security",
+        title: "7.0.5",
+        number: 312,
+        url: "https://github.com/spring-projects/spring-security/milestone/312",
+        state: "open",
+        open: 2,
+        closed: 17,
+      },
     },
     {
       version: "7.0.5.1",
       branch: "release/7.0.5.1",
       of: ["embargoed/active/7.0.x"],
+      hotfix: true,
+      milestone: {
+        repository: "spring-projects/spring-security-commercial",
+        title: "7.0.5.1",
+        number: 41,
+        url: "https://github.com/spring-projects/spring-security-commercial/milestone/41",
+        state: "open",
+        open: 0,
+        closed: 0,
+      },
     },
     {
       version: "6.5.11",
       branch: "release/6.5.11",
       of: ["embargoed/lts/6.5.x"],
+      hotfix: false,
+      milestone: {
+        repository: "spring-projects/spring-security-commercial",
+        title: "6.5.11",
+        number: 38,
+        url: "https://github.com/spring-projects/spring-security-commercial/milestone/38",
+        state: "closed",
+        open: 0,
+        closed: 6,
+      },
     },
   ],
 };
@@ -111,6 +141,53 @@ describe("render", () => {
     expect(markdown).toContain(
       "| rotation | fast forward to embargoed/active/7.0.x | embargoed/frozen/7.0.x | same |",
     );
+  });
+
+  describe("the milestones", () => {
+    const commercial = "spring-projects/spring-security-commercial";
+    it("says what a dry run would do with each, from the plan", () => {
+      const markdown = render({ plan, apply, dryRun: true });
+      expect(markdown).toContain("## Milestones closed");
+      expect(markdown).toContain(
+        "| [7.0.5](https://github.com/spring-projects/spring-security/milestone/312) | spring-projects/spring-security | 7.0.x, embargoed/frozen/7.0.x | 2 / 17 | Would be closed with 2 open issues |",
+      );
+      expect(markdown).toContain(
+        `| [7.0.5.1](https://github.com/${commercial}/milestone/41) | ${commercial} | embargoed/active/7.0.x (a hotfix) | 0 / 0 | Would be deleted, it has no issues |`,
+      );
+      expect(markdown).toContain("| 0 / 6 | Already closed |");
+    });
+
+    it("says what was done, and links none that was deleted", () => {
+      const milestones = [
+        {
+          version: "7.0.5",
+          result: "closed-with-open",
+          open: 1,
+          closed: 18,
+          url: "https://github.com/spring-projects/spring-security/milestone/312",
+        },
+        { version: "7.0.5.1", result: "deleted", open: 0, closed: 0 },
+        { version: "6.5.11", result: "failed", error: "403 Forbidden" },
+      ];
+      const markdown = render({ plan, apply, milestones, dryRun: false });
+      expect(markdown).toContain("| 1 / 18 | Closed with 1 open issue |");
+      expect(markdown).toContain(
+        `| 7.0.5.1 | ${commercial} | embargoed/active/7.0.x (a hotfix) | 0 / 0 | Deleted, it had no issues |`,
+      );
+      expect(markdown).toContain("| 0 / 6 | Failed: 403 Forbidden |");
+    });
+
+    it("says that they were not closed if the freeze did not get to it", () => {
+      const markdown = render({
+        plan,
+        apply,
+        dryRun: false,
+        status: "failure",
+      });
+      expect(markdown).toContain(
+        "| Not closed, the freeze did not get to it |",
+      );
+    });
   });
 
   it("links the run of each ready, and says what failed", () => {

@@ -3,7 +3,17 @@ import { describeProblems, planFreeze } from "../src/index.js";
 import { createFixture, git, trainWith } from "./support/freeze-fixture.js";
 
 const due = "2026-11-19T00:00:00Z";
-const milestone = (title, state = "open") => ({ title, state, due_on: due });
+let numbers = 0;
+const milestone = (title, state = "open", issues = {}) => ({
+  title,
+  state,
+  due_on: due,
+  number: ++numbers,
+  html_url: `https://github.com/x/y/milestone/${numbers}`,
+  open_issues: 0,
+  closed_issues: 0,
+  ...issues,
+});
 
 const ossMilestones = [
   milestone("7.0.5"),
@@ -11,7 +21,11 @@ const ossMilestones = [
   milestone("7.2.0-M1", "closed"),
   milestone("7.2.0-M2"),
 ];
-const commercialMilestones = [milestone("6.5.11")];
+const commercialMilestones = [
+  milestone("6.5.11"),
+  milestone("7.0.5.1"),
+  milestone("7.1.1.1"),
+];
 
 const joined = { joined: "a1" };
 const train = (overrides = {}) =>
@@ -110,6 +124,57 @@ describe("planFreeze", () => {
     ]);
   });
 
+  it("plans the milestone of each release: OSS for the OSS releases, commercial for a hotfix and for long-term support", async () => {
+    const oss = [
+      milestone("7.0.5", "open", { open_issues: 2, closed_issues: 9 }),
+      milestone("7.1.1"),
+      milestone("7.2.0-M2"),
+    ];
+    const commercial = [
+      milestone("6.5.11"),
+      milestone("7.0.5.1"),
+      milestone("7.1.1.1"),
+    ];
+    const plan = await setup({}, {}, { oss, commercial }).run();
+    const of = (version) => plan.releases.find((r) => r.version === version);
+    expect(of("7.0.5")).toMatchObject({
+      hotfix: false,
+      milestone: {
+        repository: "spring-projects/spring-security",
+        title: "7.0.5",
+        number: oss[0].number,
+        url: oss[0].html_url,
+        state: "open",
+        open: 2,
+        closed: 9,
+      },
+    });
+    expect(of("7.0.5.1")).toMatchObject({
+      hotfix: true,
+      milestone: {
+        repository: "spring-projects/spring-security-commercial",
+        number: commercial[1].number,
+      },
+    });
+    expect(of("6.5.11")).toMatchObject({
+      hotfix: false,
+      milestone: { repository: "spring-projects/spring-security-commercial" },
+    });
+  });
+
+  it("says that the milestone of a hotfix does not exist", async () => {
+    const plan = await setup(
+      {},
+      {},
+      { commercial: [milestone("6.5.11"), milestone("7.1.1.1")] },
+    ).run();
+    expect(plan.problems).toEqual([
+      expect.stringMatching(
+        /the milestone 7\.0\.5\.1 of the hotfix does not exist in spring-projects\/spring-security-commercial, and embargoed\/active\/7\.0\.x needs it/,
+      ),
+    ]);
+  });
+
   it("changes nothing in the branches: it only adds and fetches the OSS remote", async () => {
     const { fixture, run } = setup();
     const before = git(
@@ -164,7 +229,7 @@ describe("planFreeze", () => {
     const { fixture, run } = setup(
       {},
       { ossBranches: ["main"], ltsGenerations: [], trainDocument: train() },
-      { oss: [milestone("7.2.0")] },
+      { oss: [milestone("7.2.0")], commercial: [milestone("7.2.0.1")] },
     );
     const plan = await run();
     // the GA milestone is the next release: its release branch and the hotfix are needed

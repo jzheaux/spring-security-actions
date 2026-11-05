@@ -18,11 +18,13 @@ It runs with a **dry run on by default**: it plans, makes the merges and the ver
    - a `release/<version>` does not exist or has not joined the release train, or the train does not exist (one that is **ready already** is not a problem: it is skipped, see below),
    - a branch does not exist, or the OSS, frozen and active branches of a generation have different versions,
    - a `.0` version has no open milestone,
+   - the milestone of a hotfix (`7.0.5.1`) does not exist in the commercial repository (the release workflow creates it),
    - the override is wrong (a branch that is not of that kind, the wrong order, a gap in the middle, a duplicate).
 2. **Apply**, in a clone. The OSS branches first, from the OSS repository alone; then the embargoed ones; then each frozen branch is fast forwarded to its active branch.
 3. **Check**: nothing commercial goes to OSS, and both pushes would be accepted. **A dry run ends here.**
 4. **Ready**: `release-train-ready.yml` runs on each `release/<version>`, and the freeze waits for it. A release that is ready in the train already is skipped, and its branches are bumped all the same. Ready cannot be undone, so it comes after everything that can be checked, and before any bump is pushed.
 5. **Push**: the commercial repository, then OSS, each in one atomic push without force.
+6. **Milestones**: [close-milestones](../close-milestones/README.md) closes the milestone of each release, in the OSS repository for the OSS and frozen releases, and in the commercial one for a hotfix and for long-term support. A milestone with open issues is closed all the same, and the summary has the count. The milestone of a **hotfix that has no issues**, open or closed, is **deleted**. This is last, so a failed push leaves them open, and a dry run says what it would do and does nothing.
 
 ### The next version
 
@@ -140,15 +142,15 @@ Running the stub by accident changes nothing. Choose a branch that has the real 
 
 | Where | What for | Fine-grained token | Classic token |
 |---|---|---|---|
-| the commercial repository | check out, push the branches, run `release-train-ready.yml`, read its milestones | **Contents: Read and write**, **Actions: Read and write**, **Issues: Read** | `repo` |
-| the OSS repository | fetch, push the branches, read its milestones | **Contents: Read and write**, **Issues: Read** | `repo` |
+| the commercial repository | check out, push the branches, run `release-train-ready.yml`, close and delete its milestones | **Contents: Read and write**, **Actions: Read and write**, **Issues: Read and write** | `repo` |
+| the OSS repository | fetch, push the branches, close its milestones | **Contents: Read and write**, **Issues: Read and write** | `repo` |
 | the release train repository | read the train | **Contents: Read** | `repo` |
 
 Both repositories must let the token push to their protected branches (a bypass in the ruleset), as the freeze pushes the version commits and the merges directly.
 
 ## Reading a run
 
-The summary has the versions of every branch, the releases marked ready with a link to each run, the merges in order, and the pushes with the OSS leak check. A dry run says so in the title.
+The summary has the versions of every branch, the releases marked ready with a link to each run, the merges in order, the pushes with the OSS leak check, and the milestones that were closed or deleted. A dry run says so in the title.
 
 | What the run says | What to do |
 |---|---|
@@ -162,6 +164,8 @@ The summary has the versions of every branch, the releases marked ready with a l
 | **Commercial code would reach OSS** | Do not push. The message lists the commits. The cause is a bug in the freeze or a changed history: nothing was pushed or marked ready. |
 | `Pushing the OSS branches would be refused` (the check) | Someone pushed to an OSS branch since the plan. Run it again. |
 | `The commercial branches were pushed, and the OSS branches were refused` | The commercial push worked, and OSS did not. The message has the command to push the OSS commits by hand. Do not run the freeze again: it would bump twice. |
+| `the milestone 7.0.5.1 of the hotfix does not exist` | The release workflow creates it when the active branch is pushed. Push it, or leave the branch out of `branches`. |
+| `Milestones not closed` | The freeze is done. Close the milestones that the message lists by hand: the token needs Issues: Read and write on both repositories. |
 | The ready run fails | The release is not ready, so nothing was pushed. Look at the run that the summary links. Releases that did succeed stay ready, and a rerun skips them (`Ready already, skipped`), so the freeze can be run again. |
 
 Pushing the bumped embargoed branches runs the release workflow for the new versions. It finds no milestone, creates it with no due date, and ends with the notice **Milestone created**.
