@@ -1,0 +1,71 @@
+import { execFileSync, spawnSync } from "node:child_process";
+
+/**
+ * Runs git in a directory and returns what it printed, without the last newline. If it
+ * fails, the error is what git said, with the command, instead of a stack trace.
+ */
+export function git(directory, ...args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: directory,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).replace(/\n$/, "");
+  } catch (error) {
+    const said = `${error.stderr ?? ""}${error.stdout ?? ""}`.trim();
+    throw new Error(`git ${args.join(" ")} failed: ${said || error.message}`);
+  }
+}
+
+/**
+ * Fails, with what to do, if git has not been told who commits (user.name and
+ * user.email, or the GIT_AUTHOR_* and GIT_COMMITTER_* variables). Without this, git
+ * makes an identity up from the name of the user and of the machine, for example
+ * runner@fv-az123, and the commits are made as that.
+ */
+export function requireIdentity(directory) {
+  try {
+    git(
+      directory,
+      "-c",
+      "user.useConfigOnly=true",
+      "var",
+      "GIT_COMMITTER_IDENT",
+    );
+    git(directory, "-c", "user.useConfigOnly=true", "var", "GIT_AUTHOR_IDENT");
+  } catch {
+    throw new Error(
+      "git does not know who commits: set user.name and user.email (git config), for example to github-actions[bot] and 41898282+github-actions[bot]@users.noreply.github.com",
+    );
+  }
+}
+
+/**
+ * Runs git in a directory like git(), but gives its exit code, what it printed and what it
+ * said, and never throws for a git that failed. For a git whose failure is an answer
+ * (merge-base --is-ancestor says no with the exit code 1), or is to be handled (a merge).
+ */
+export function gitTry(directory, ...args) {
+  const result = spawnSync("git", args, { cwd: directory, encoding: "utf8" });
+  return {
+    code: result.status ?? 1,
+    stdout: (result.stdout ?? "").replace(/\n$/, ""),
+    stderr: (result.stderr ?? "").replace(/\n$/, ""),
+  };
+}
+
+/**
+ * Makes every git of this process use the token as the credentials of its requests (a basic
+ * authorization header, given through the environment so that it is in no argument, which an
+ * error would print, and in no file), and hides the token in the logs.
+ */
+export function authenticate(token) {
+  if (!token) {
+    return;
+  }
+  const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
+  process.env.GIT_CONFIG_COUNT = "1";
+  process.env.GIT_CONFIG_KEY_0 = "http.extraheader";
+  process.env.GIT_CONFIG_VALUE_0 = `Authorization: basic ${basic}`;
+  process.env.GIT_TERMINAL_PROMPT = "0";
+}

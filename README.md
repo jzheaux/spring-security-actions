@@ -36,6 +36,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`plan-freeze`](plan-freeze/README.md) | Plans a code freeze: the next versions, the releases to mark ready, and everything that stops it. |
 | [`plan-post-publish`](plan-post-publish/README.md) | Plans what happens after a release is made public: its kind, whether its issues are copied, the merges of its tag and the branches to delete. |
 | [`plan-release-branches`](plan-release-branches/README.md) | What the push of an embargoed branch builds. |
+| [`push-merges`](push-merges/README.md) | Checks that no commercial code goes to OSS, and pushes the branches that a tag was merged into, OSS first, atomically and without force. |
 | [`push-branches`](push-branches/README.md) | Pushes branches at once or none, and summarizes them. |
 | [`push-freeze`](push-freeze/README.md) | Checks that no commercial code goes to OSS, and pushes the branches of a code freeze, atomically and without force. |
 | [`ready-train`](ready-train/README.md) | Runs the workflow Release Train - Ready of the project on each release branch of a code freeze, and waits for it. |

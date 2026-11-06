@@ -1,0 +1,40 @@
+name: "push-merges"
+description: "Checks that no commercial code goes to OSS, and pushes the branches that a tag was merged into, OSS first, atomically and without force"
+
+inputs:
+  mode:
+    description: "`check`: the tripwire and a push that is only tried (`--dry-run`) to both remotes. `push`: the tripwire again, then OSS, then the commercial repository."
+    required: true
+  merge-file:
+    description: "What was done (the output `merge-file` of `merge-tag`). post-publish/merge.json in RUNNER_TEMP by default."
+    required: false
+  push-file:
+    description: "Where to write what was checked and pushed, as JSON. post-publish/push.json in RUNNER_TEMP by default."
+    required: false
+  commercial-remote:
+    description: "The remote of the commercial repository."
+    required: false
+    default: "origin"
+  oss-remote:
+    description: "The remote of the OSS repository, which `merge-tag` added. It is not used for a release that is not an OSS one."
+    required: false
+    default: "oss"
+  summary:
+    description: "false to leave the table of the pushes out of the summary, for a check that a push follows."
+    required: false
+    default: "true"
+  path:
+    description: "The directory of the clone."
+    required: false
+    default: "."
+  token:
+    description: "A token that can push to both repositories (contents write), for the credentials of the pushes. Pass it as a secret."
+    required: false
+
+outputs:
+  push-file:
+    description: "The file with what was checked and pushed, as JSON."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

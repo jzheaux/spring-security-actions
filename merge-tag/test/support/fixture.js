@@ -5,11 +5,17 @@ import path from "node:path";
 
 /** Runs git in a directory, and returns what it printed without the last newline. */
 export function git(directory, ...args) {
-  return execFileSync("git", args, {
-    cwd: directory,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).replace(/\n$/, "");
+  try {
+    return execFileSync("git", args, {
+      cwd: directory,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).replace(/\n$/, "");
+  } catch (error) {
+    // what git said, so that a failure of the fixture says why
+    error.message = `${error.message}\n${error.stderr ?? ""}`;
+    throw error;
+  }
 }
 
 /** The version catalog: a line between two versions, so that two changes are never adjacent. */
