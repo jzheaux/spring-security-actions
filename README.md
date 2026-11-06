@@ -13,6 +13,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`align-milestone`](align-milestone/README.md) | Sets the due date of the milestone of a hotfix to the commercial general availability of its release train. |
 | [`apply-commercial-license`](apply-commercial-license/README.md) | Changes a repository to the commercial license, for a hotfix: the headers (one year), `etc/checkstyle/header.txt`, `LICENSE.txt` and the license of the POM. |
 | [`apply-freeze`](apply-freeze/README.md) | Makes the merges and the version commits of a code freeze, locally, in the order that keeps commercial code out of OSS. |
+| [`backup-branches`](backup-branches/README.md) | Backs up branches that are going to be deleted, in a clone with only those branches, with the commands to restore them. |
 | [`check-not-ready`](check-not-ready/README.md) | Fails if the release train has the release as ready already. |
 | [`check-oss-support`](check-oss-support/README.md) | Fails if the OSS support of the generation of a version ends before a date, from the Spring projects API. |
 | [`compare-branches`](compare-branches/README.md) | Whether a branch has changes that another branch lacks: a hotfix is only built for an active embargoed branch that differs from the frozen one. |
