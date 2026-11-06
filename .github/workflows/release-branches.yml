@@ -124,7 +124,7 @@ jobs:
         uses: spring-io/spring-release-actions/compute-version@3f7412aeec60ad13127b2a536a1b19a2803a5b81 # 0.0.8
       - name: Decide what to build
         id: plan
-        uses: spring-io/spring-security-actions/plan-release-branches@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/plan-release-branches@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           ref-name: ${{ github.ref_name }}
           version: ${{ steps.version.outputs.version }}
@@ -135,7 +135,7 @@ jobs:
       - name: Compare the active embargoed branch with the frozen one
         id: compare
         if: steps.plan.outputs.kind == 'active' && steps.plan.outputs.release == 'true'
-        uses: spring-io/spring-security-actions/compare-branches@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/compare-branches@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           base: ${{ steps.plan.outputs.frozen-branch }}
 
@@ -147,7 +147,7 @@ jobs:
       - name: Name the repositories
         id: repositories
         if: steps.plan.outputs.release == 'true' && (steps.plan.outputs.kind != 'active' || steps.compare.outputs.different == 'true')
-        uses: spring-io/spring-security-actions/name-repositories@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/name-repositories@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
       # A hotfix is in the release train of its OSS equivalent: the train that the milestone of the
       # release it fixes (7.0.1 for 7.0.1.1) is due. The due date of the milestone of the hotfix is
       # when it is commercially available, and that is after the train that builds it. Like the
@@ -160,7 +160,7 @@ jobs:
       - name: Work out the date of the release train of the hotfix
         id: train-milestone
         if: steps.plan.outputs.kind == 'active' && steps.plan.outputs.release == 'true' && steps.compare.outputs.different == 'true'
-        uses: spring-io/spring-security-actions/compute-release-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/compute-release-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           snapshot-version: ${{ format('{0}-SNAPSHOT', steps.plan.outputs.hotfix-of-version) }}
           milestone-repository: ${{ steps.repositories.outputs.oss-repository }}
@@ -177,7 +177,7 @@ jobs:
       - name: Work out the release version
         id: release
         if: steps.plan.outputs.release == 'true' && (steps.plan.outputs.kind != 'active' || steps.compare.outputs.different == 'true') && steps.train-milestone.outputs.no-release != 'true'
-        uses: spring-io/spring-security-actions/compute-release-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/compute-release-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           snapshot-version: ${{ steps.plan.outputs.base-version }}
           milestone-repository: ${{ steps.plan.outputs.kind != 'frozen' && github.repository || steps.repositories.outputs.oss-repository }}
@@ -196,7 +196,7 @@ jobs:
       # its description says that it is the OSS one, with a link to it (only when it is created).
       - name: Make the milestone of the OSS version in the commercial repository
         if: steps.plan.outputs.kind == 'frozen' && steps.release.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/ensure-milestone@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/ensure-milestone@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           repository: ${{ github.repository }}
           milestone: ${{ steps.release.outputs.release-version }}
@@ -208,7 +208,7 @@ jobs:
       # due date, and fails with a summary that says to set it.
       - name: Stop if the OSS milestone of the hotfix has no due date
         if: steps.train-milestone.outputs.found == 'true' && steps.train-milestone.outputs.due-date == ''
-        uses: spring-io/spring-security-actions/compute-release-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/compute-release-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           snapshot-version: ${{ format('{0}-SNAPSHOT', steps.plan.outputs.hotfix-of-version) }}
           milestone-repository: ${{ steps.repositories.outputs.oss-repository }}
@@ -219,7 +219,7 @@ jobs:
       # is made public (the date of its train). Once it is commercial, it has one embargoed/lts branch.
       - name: Check that the generation is still supported as OSS
         if: steps.plan.outputs.kind != 'lts' && steps.release.outputs.found == 'true' && steps.train-milestone.outputs.found != 'false'
-        uses: spring-io/spring-security-actions/check-oss-support@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/check-oss-support@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           project: ${{ steps.repositories.outputs.project }}
           version: ${{ steps.release.outputs.release-version }}
@@ -250,14 +250,14 @@ jobs:
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
           fetch-depth: 0
       - name: Set the git identity
-        uses: spring-io/spring-security-actions/git-identity@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/git-identity@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
       # The train is the one that the description of the milestone names (Release Train: 2026.10.22),
       # which a long-term support version needs. Without one, it is the one that the milestone of the
       # release is due (for a hotfix, the milestone of the release it fixes). If it has not been
       # created, that is said in a notice, and the branches are built without the dependencies.
       - name: Read the release train
         id: train
-        uses: spring-io/spring-security-actions/load-train@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/load-train@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           release-train-repository: ${{ inputs.release-train-repository || 'spring-io/release-train' }}
           branch: ${{ needs.plan.outputs.train-branch }}
@@ -267,7 +267,7 @@ jobs:
       # availability of the train: it is corrected here if it is not, or if it has none.
       - name: Set the due date of the milestone
         if: env.KIND != 'frozen' && steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/align-milestone@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/align-milestone@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           train-file: ${{ steps.train.outputs.train-file }}
           train-branch: ${{ steps.train.outputs.branch }}
@@ -277,7 +277,7 @@ jobs:
       - name: Stop if the release is ready already
         id: not-ready
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/check-not-ready@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/check-not-ready@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           train-file: ${{ steps.train.outputs.train-file }}
           project: ${{ needs.plan.outputs.project }}
@@ -293,7 +293,7 @@ jobs:
       # long-term support version is a plain -SNAPSHOT, and only OSS has an internal one: it
       # publishes a regular snapshot without the fixes for vulnerabilities that the commercial one has.
       - name: Start the snapshot branch
-        uses: spring-io/spring-security-actions/start-branch@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/start-branch@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           branch: ${{ env.SNAPSHOT_BRANCH }}
           from: ${{ github.sha }}
@@ -303,24 +303,24 @@ jobs:
       - name: Merge the snapshot of the release into the snapshot of the hotfix
         id: merge-snapshot
         if: env.KIND == 'active'
-        uses: spring-io/spring-security-actions/merge-release@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/merge-release@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           release: ${{ env.HOTFIX_OF_SNAPSHOT }}
       - name: Apply the commercial license
         if: env.KIND == 'active'
-        uses: spring-io/spring-security-actions/apply-commercial-license@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/apply-commercial-license@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           commit-message: Commercial changes for ${{ needs.plan.outputs.release-version }}
       - name: Set the version of the snapshot
         if: env.KIND != 'lts'
-        uses: spring-io/spring-security-actions/set-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/set-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           version: ${{ env.SNAPSHOT_VERSION }}
           message: Set the version to ${{ env.SNAPSHOT_VERSION }}
       - name: Work out the snapshots of the dependencies
         id: snapshot-versions
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/map-train-versions@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/map-train-versions@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           release-versions-file: ${{ steps.train.outputs.release-versions-file }}
           train-file: ${{ steps.train.outputs.train-file }}
@@ -329,7 +329,7 @@ jobs:
           hotfix-suffix: -SNAPSHOT
       - name: Update the dependencies of the snapshot
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/update-versions@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/update-versions@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           versions: ${{ steps.snapshot-versions.outputs.versions }}
           require-issue: "false"
@@ -342,25 +342,25 @@ jobs:
       # dependencies of the release train, each with an issue and a commit, and the version of the
       # release, last.
       - name: Start the release branch
-        uses: spring-io/spring-security-actions/start-branch@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/start-branch@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           branch: release/${{ needs.plan.outputs.release-version }}
           from: ${{ github.sha }}
       - name: Merge the release into the hotfix
         id: merge-release
         if: env.KIND == 'active'
-        uses: spring-io/spring-security-actions/merge-release@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/merge-release@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           release: ${{ env.HOTFIX_OF_RELEASE }}
       - name: Apply the commercial license to the hotfix
         if: env.KIND == 'active'
-        uses: spring-io/spring-security-actions/apply-commercial-license@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/apply-commercial-license@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           commit-message: Commercial changes for ${{ needs.plan.outputs.release-version }}
       - name: Work out the versions of the dependencies
         id: versions
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/map-train-versions@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/map-train-versions@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           release-versions-file: ${{ steps.train.outputs.release-versions-file }}
           train-file: ${{ steps.train.outputs.train-file }}
@@ -372,7 +372,7 @@ jobs:
       - name: Make sure that there are issues
         id: issues
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/ensure-dependency-issues@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/ensure-dependency-issues@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           versions: ${{ steps.versions.outputs.versions }}
           repository: ${{ env.KIND != 'frozen' && github.repository || needs.plan.outputs.oss-repository }}
@@ -382,11 +382,11 @@ jobs:
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Update the dependencies of the release
         if: steps.train.outputs.found == 'true'
-        uses: spring-io/spring-security-actions/update-versions@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/update-versions@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           versions: ${{ steps.issues.outputs.updates }}
       - name: Set the version of the release
-        uses: spring-io/spring-security-actions/set-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/set-version@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           version: ${{ needs.plan.outputs.release-version }}
           message: Release ${{ needs.plan.outputs.release-version }}
@@ -394,7 +394,7 @@ jobs:
       # Both at once, or none: so a failure never leaves one of them built and not the other.
       # It is forced, because the branches are built again from the pushed commit every time.
       - name: Push the branches
-        uses: spring-io/spring-security-actions/push-branches@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/push-branches@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           kind: ${{ env.KIND }}
           oss-repository: ${{ needs.plan.outputs.oss-repository }}
@@ -419,7 +419,7 @@ jobs:
       # release, the one that was set above for a hotfix. A release that has joined is not joined
       # again, so a run by hand after the due date of a milestone was set joins what was missed.
       - name: Join the release train
-        uses: spring-io/spring-security-actions/join-train@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.19
+        uses: spring-io/spring-security-actions/join-train@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
           release-train-repository: ${{ inputs.release-train-repository || 'spring-io/release-train' }}
           train-branch: ${{ steps.train.outputs.branch }}
