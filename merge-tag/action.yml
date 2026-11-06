@@ -1,0 +1,40 @@
+name: "merge-tag"
+description: "Merges the tag of a release that was made public into its branch and forward through the newer branches, locally, keeping the versions of every branch"
+
+inputs:
+  plan-file:
+    description: "The plan (the output `plan-file` of `plan-post-publish`). post-publish/plan.json in RUNNER_TEMP by default."
+    required: false
+  merge-file:
+    description: "Where to write what was done, as JSON. post-publish/merge.json in RUNNER_TEMP by default."
+    required: false
+  commercial-remote:
+    description: "The remote of the commercial repository, which the clone was checked out from."
+    required: false
+    default: "origin"
+  oss-remote:
+    description: "The name of the remote that is added for the OSS repository. It is never added for a long-term support release."
+    required: false
+    default: "oss"
+  oss-url:
+    description: "The URL of the OSS repository. The default is the one of the repository of the plan on GITHUB_SERVER_URL."
+    required: false
+  dry-run:
+    description: "true if the run is a dry run, which the summary says. The merges are made in the clone either way, and nothing is pushed."
+    required: false
+    default: "false"
+  path:
+    description: "The directory of the clone of the commercial repository. It needs a clean working tree and an identity (`git-identity`), and all its branches."
+    required: false
+    default: "."
+  token:
+    description: "A token that can read the OSS repository, for the credentials of the fetch."
+    required: false
+
+outputs:
+  merge-file:
+    description: "The file with what was done, as JSON: the refs of the branches before and after, the merges, and the commits that were made in each repository."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

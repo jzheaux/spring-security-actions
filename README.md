@@ -31,6 +31,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`load-train`](load-train/README.md) | Reads the release train of a date. |
 | [`map-train-versions`](map-train-versions/README.md) | Which versions of a version catalog the release train asks to change, and to what. |
 | [`merge-release`](merge-release/README.md) | Merges the release into the branch of its hotfix. |
+| [`merge-tag`](merge-tag/README.md) | Merges the tag of a release that was made public into its branch and forward through the newer branches, locally, keeping the versions of every branch. |
 | [`name-repositories`](name-repositories/README.md) | The project and its OSS repository, from the commercial repository. |
 | [`plan-freeze`](plan-freeze/README.md) | Plans a code freeze: the next versions, the releases to mark ready, and everything that stops it. |
 | [`plan-post-publish`](plan-post-publish/README.md) | Plans what happens after a release is made public: its kind, whether its issues are copied, the merges of its tag and the branches to delete. |
