@@ -13,6 +13,8 @@ outputs:
     description: "The name of the repository without `-commercial`: the project id in the release train."
   oss-repository:
     description: "`owner/project`: the repository with the milestones and the issues of the releases. A hotfix has its own in the repository that runs the workflow."
+  commercial-repository:
+    description: "`owner/project-commercial`: the repository with the embargoed branches and the release branches. It is the repository that runs the workflow when that is the commercial one."
 
 runs:
   using: "node24"

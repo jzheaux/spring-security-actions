@@ -10,7 +10,14 @@ describe("nameRepositories", () => {
       owner: "spring-projects",
       project: "spring-security",
       ossRepository: "spring-projects/spring-security",
+      commercialRepository: "spring-projects/spring-security-commercial",
     });
+  });
+
+  it("names the commercial repository when it runs from the OSS one", () => {
+    expect(
+      nameRepositories("spring-projects/spring-session").commercialRepository,
+    ).toBe("spring-projects/spring-session-commercial");
   });
 
   it("is the same for a repository that is not commercial", () => {
@@ -54,6 +61,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         owner: "rwinch",
         project: "spring-merge",
         "oss-repository": "rwinch/spring-merge",
+        "commercial-repository": "rwinch/spring-merge-commercial",
       });
     });
 

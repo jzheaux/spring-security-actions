@@ -31632,7 +31632,10 @@ const SUFFIX = "-commercial";
  * The names that follow from the repository that runs the workflow. The embargoed
  * branches only exist in the commercial repository (spring-security-commercial), and the
  * project of the release train, and the OSS repository with the milestones and the issues
- * (spring-security), are named after it: its name without -commercial.
+ * (spring-security), are named after it: its name without -commercial. The commercial
+ * repository is that name with -commercial, so it is the repository itself when it runs
+ * from the commercial one, and the commercial repository of the project when it runs from
+ * the OSS one.
  */
 function nameRepositories(repository) {
   const match = /^([^/\s]+)\/([^/\s]+)$/.exec(repository ?? "");
@@ -31644,19 +31647,26 @@ function nameRepositories(repository) {
   if (!project) {
     throw new Error(`${repository} has no name without ${SUFFIX}`);
   }
-  return { owner, project, ossRepository: `${owner}/${project}` };
+  return {
+    owner,
+    project,
+    ossRepository: `${owner}/${project}`,
+    commercialRepository: `${owner}/${project}${SUFFIX}`,
+  };
 }
 
 async function main() {
   const repository =
     getInput("repository") || process.env.GITHUB_REPOSITORY;
-  const { owner, project, ossRepository } = nameRepositories(repository);
+  const { owner, project, ossRepository, commercialRepository } =
+    nameRepositories(repository);
   info(
-    `${repository}: the project is ${project}, its OSS repository ${ossRepository}`,
+    `${repository}: the project is ${project}, its OSS repository ${ossRepository} and its commercial repository ${commercialRepository}`,
   );
   setOutput("owner", owner);
   setOutput("project", project);
   setOutput("oss-repository", ossRepository);
+  setOutput("commercial-repository", commercialRepository);
 }
 
 if (isMain(import.meta.url)) {
