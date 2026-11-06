@@ -22,6 +22,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`compute-tag-versions`](compute-tag-versions/README.md) | The release version and the snapshot version of a tag. |
 | [`copy-milestone-issues`](copy-milestone-issues/README.md) | Copies the issues and the pull requests of a milestone to another repository, as issues, and comments on each original with the link to its copy. |
 | [`delete-branches`](delete-branches/README.md) | Deletes branches of a repository, all at once or none (`git push --atomic --delete`). |
+| [`ensure-cve-issues`](ensure-cve-issues/README.md) | A closed issue for every CVE fix of a push, in the milestone of its release. It makes the ones that are missing. |
 | [`ensure-dependency-issues`](ensure-dependency-issues/README.md) | An issue for every dependency update, in a milestone. It makes the ones that are missing. |
 | [`ensure-milestone`](ensure-milestone/README.md) | Creates a milestone in a repository if it has none of that title, with no due date. |
 | [`freeze-summary`](freeze-summary/README.md) | Writes the summary of a code freeze. |
@@ -49,6 +50,8 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 [`release-branches.yml`](.github/workflows/release-branches.yml) is a reusable workflow that builds `release/<version>` and the snapshot branches on a push to an embargoed branch, with the actions above and nothing else (every step is an action). [docs/release-branches.md](docs/release-branches.md) is the guide: what it builds, how to call it, the secret and the tokens it needs, and what to do when it fails.
 
 [`post-publish.yml`](.github/workflows/post-publish.yml) is a reusable workflow for what follows once a release is public: it copies the issues of its milestone to OSS, merges its tag forward, and deletes the branches that were built for the release. It is run when the tag is pushed, or by hand, with a dry run. [docs/post-publish.md](docs/post-publish.md) is the guide: the callers, the token, and what to do when it fails.
+
+[`ensure-cve-issues.yml`](.github/workflows/ensure-cve-issues.yml) is a reusable workflow for a push to an active branch: it makes a closed issue for every `Fixes CVE-ID` that the push has, in the milestone of the release. [docs/cve-issues.md](docs/cve-issues.md) is the guide, with the caller.
 
 [`code-freeze.yml`](.github/workflows/code-freeze.yml) is a reusable workflow for the code freeze of a project: it moves every branch to its next development version, merges forward, marks the releases ready and pushes, with a dry run that is on by default. [docs/code-freeze.md](docs/code-freeze.md) is the guide, with the caller, the stub that the default branch of the commercial repository needs, and the guarantee that nothing commercial reaches OSS.
 
