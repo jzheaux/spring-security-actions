@@ -28626,6 +28626,7 @@ var __webpack_exports__ = {};
 __nccwpck_require__.d(__webpack_exports__, {
   iW: () => (/* binding */ main),
   Yf: () => (/* binding */ mergesTable),
+  s0: () => (/* binding */ milestonesTable),
   c5: () => (/* binding */ readyTable),
   XX: () => (/* binding */ render),
   Ks: () => (/* binding */ versionsTable)
@@ -31763,6 +31764,73 @@ function mergesTable(apply) {
   return table(["Kind", "Merge", "Into", "Version kept"], rows);
 }
 
+const issues = (n) => `${n} open ${n === 1 ? "issue" : "issues"}`;
+
+/** What a dry run says about a milestone, from the plan: what the action would do with it. */
+const wouldBe = (release) => {
+  const { milestone } = release;
+  if (release.hotfix && milestone.open + milestone.closed === 0) {
+    return "Would be deleted, it has no issues";
+  }
+  if (milestone.state === "closed") {
+    return "Already closed";
+  }
+  return milestone.open > 0
+    ? `Would be closed with ${issues(milestone.open)}`
+    : "Would be closed";
+};
+
+const doneResult = (result) => {
+  switch (result.result) {
+    case "closed":
+      return "Closed";
+    case "closed-with-open":
+      return `Closed with ${issues(result.open)}`;
+    case "already-closed":
+      return "Already closed";
+    case "deleted":
+      return "Deleted, it had no issues";
+    default:
+      return `Failed: ${result.error}`;
+  }
+};
+
+/** The milestones of the releases that are closed (or deleted) after the pushes. */
+function milestonesTable(plan, milestones, dryRun) {
+  const rows = plan.releases
+    .filter((release) => release.milestone)
+    .map((release) => {
+      const { milestone } = release;
+      const done = milestones?.find((m) => m.version === release.version);
+      const counts = done?.open !== undefined ? done : milestone;
+      const gone = done?.result === "deleted";
+      const result = dryRun
+        ? wouldBe(release)
+        : done
+          ? doneResult(done)
+          : "Not closed, the freeze did not get to it";
+      return [
+        gone || !milestone.url
+          ? release.version
+          : `[${release.version}](${done?.url ?? milestone.url})`,
+        milestone.repository,
+        release.of.join(", ") + (release.hotfix ? " (a hotfix)" : ""),
+        `${counts.open} / ${counts.closed}`,
+        result,
+      ];
+    });
+  return table(
+    [
+      "Milestone",
+      "Repository",
+      "Release of",
+      "Issues (open / closed)",
+      "Result",
+    ],
+    rows,
+  );
+}
+
 function pushSection(push, dryRun) {
   const verb = push.mode === "check" || dryRun ? "dry run" : "pushed";
   const lines = [
@@ -31782,7 +31850,15 @@ function pushSection(push, dryRun) {
  * The summary of a code freeze, as markdown. Every part is optional, as the run may have
  * stopped before it: the plan came first, then what was applied, ready and pushed.
  */
-function render({ plan, apply, ready, push, dryRun, status }) {
+function render({
+  plan,
+  apply,
+  ready,
+  push,
+  milestones,
+  dryRun,
+  status,
+}) {
   const parts = [];
   const flags = [dryRun ? "DRY RUN" : "", status === "failure" ? "FAILED" : ""]
     .filter(Boolean)
@@ -31815,6 +31891,14 @@ function render({ plan, apply, ready, push, dryRun, status }) {
   if (push) {
     parts.push(`## Push\n${pushSection(push, dryRun)}`);
   }
+  if (
+    plan.problems?.length === 0 &&
+    plan.releases.some((release) => release.milestone)
+  ) {
+    parts.push(
+      `## Milestones closed\nEach release marked ready has its milestone closed once the pushes succeed. A milestone with open issues is closed all the same, and the count is shown. A hotfix milestone with no issues is deleted.\n\n${milestonesTable(plan, milestones, dryRun)}`,
+    );
+  }
   return parts.join("\n\n");
 }
 
@@ -31827,6 +31911,7 @@ async function main() {
     apply: read(file("apply-file", "apply.json")),
     ready: read(file("ready-file", "ready.json")),
     push: read(file("push-file", "push.json")),
+    milestones: read(file("milestones-file", "milestones.json")),
     dryRun: getInput("dry-run") === "true",
     status: getInput("job-status"),
   });
@@ -31839,7 +31924,8 @@ if (isMain(import.meta.url)) {
 
 var __webpack_exports__main = __webpack_exports__.iW;
 var __webpack_exports__mergesTable = __webpack_exports__.Yf;
+var __webpack_exports__milestonesTable = __webpack_exports__.s0;
 var __webpack_exports__readyTable = __webpack_exports__.c5;
 var __webpack_exports__render = __webpack_exports__.XX;
 var __webpack_exports__versionsTable = __webpack_exports__.Ks;
-export { __webpack_exports__main as main, __webpack_exports__mergesTable as mergesTable, __webpack_exports__readyTable as readyTable, __webpack_exports__render as render, __webpack_exports__versionsTable as versionsTable };
+export { __webpack_exports__main as main, __webpack_exports__mergesTable as mergesTable, __webpack_exports__milestonesTable as milestonesTable, __webpack_exports__readyTable as readyTable, __webpack_exports__render as render, __webpack_exports__versionsTable as versionsTable };

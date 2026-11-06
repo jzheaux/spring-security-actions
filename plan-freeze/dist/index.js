@@ -36866,17 +36866,34 @@ async function planFreeze(
   const lts = [];
   const releases = new Map();
   const ossMilestones = await readMilestones(ossRepository);
-  const commercialMilestones =
-    ltsGenerations.length > 0 ? await readMilestones(hostRepository) : [];
+  const commercialMilestones = await readMilestones(hostRepository);
   const titles = (milestones) => milestones.map((m) => m.title);
 
-  const release = (version, builtFrom, of) => {
+  /** The milestone of a release, to be closed (or deleted) after the freeze: undefined if there is none. */
+  const milestoneOf = (milestones, repository, title) => {
+    const found = milestones.find((m) => m.title === title);
+    return (
+      found && {
+        repository,
+        title,
+        number: found.number,
+        url: found.html_url ?? "",
+        state: found.state,
+        open: found.open_issues ?? 0,
+        closed: found.closed_issues ?? 0,
+      }
+    );
+  };
+
+  const release = (version, builtFrom, of, milestone, hotfix = false) => {
     const entry = releases.get(version) ?? {
       version,
       branch: `release/${version}`,
       builtFrom,
       of: [],
       alreadyReady: false,
+      hotfix,
+      milestone,
     };
     entry.of.push(...of);
     releases.set(version, entry);
@@ -36942,13 +36959,29 @@ async function planFreeze(
       );
       continue;
     }
-    release(releaseVersion, frozen, [branch, frozen]);
+    release(
+      releaseVersion,
+      frozen,
+      [branch, frozen],
+      milestoneOf(ossMilestones, ossRepository, releaseVersion),
+    );
     const hotfix = hotfixOf(candidate, releaseVersion);
     const differs =
       gitTry(directory, "diff", "--quiet", `${refs[frozen]}...${refs[active]}`)
         .code !== 0;
     if (hotfix && differs) {
-      release(hotfix, active, [active]);
+      // the milestone of a hotfix is in the commercial repository
+      const milestone = milestoneOf(
+        commercialMilestones,
+        hostRepository,
+        hotfix,
+      );
+      if (!milestone) {
+        problems.push(
+          `the milestone ${hotfix} of the hotfix does not exist in ${hostRepository}, and ${active} needs it: the release workflow creates it`,
+        );
+      }
+      release(hotfix, active, [active], milestone, true);
     }
   }
 
@@ -36986,7 +37019,12 @@ async function planFreeze(
       );
       continue;
     }
-    release(releaseVersion, branch, [branch]);
+    release(
+      releaseVersion,
+      branch,
+      [branch],
+      milestoneOf(commercialMilestones, hostRepository, releaseVersion),
+    );
   }
 
   for (const entry of releases.values()) {
