@@ -84,26 +84,68 @@ describe("deleteBranches", () => {
         { branch: "release/1.0", result: "deleted" },
         { branch: "embargoed/1.0", result: "deleted" },
       ],
+      deleted: ["release/1.0", "embargoed/1.0"],
+      missing: [],
+      dryRun: false,
     });
     expect(w.branches()).toEqual(["keep", "main"]);
   });
 
-  it("deletes nothing if a branch does not exist", () => {
+  it("skips a branch that does not exist, and deletes the others", () => {
     const w = world(["a", "b"]);
-    const { rows, problem } = run(w, ["a", "nope", "b"]);
-    expect(rows).toEqual([
-      { branch: "a", result: "not deleted" },
+    const result = run(w, ["a", "nope", "b"]);
+    expect(result).toEqual({
+      rows: [
+        { branch: "a", result: "deleted" },
+        { branch: "nope", result: "not found" },
+        { branch: "b", result: "deleted" },
+      ],
+      deleted: ["a", "b"],
+      missing: ["nope"],
+      dryRun: false,
+    });
+    expect(w.branches()).toEqual(["main"]);
+  });
+
+  it("has nothing to delete when every branch is gone already, so a run can be repeated", () => {
+    const w = world(["a"]);
+    expect(run(w, ["a"]).deleted).toEqual(["a"]);
+    const again = run(w, ["a"]);
+    expect(again).toEqual({
+      rows: [{ branch: "a", result: "not found" }],
+      deleted: [],
+      missing: ["a"],
+      dryRun: false,
+    });
+    expect(w.branches()).toEqual(["main"]);
+  });
+
+  it("deletes nothing in a dry run, and says what would be deleted", () => {
+    const w = world(["a", "b"]);
+    process.env.GITHUB_SERVER_URL = w.env.GITHUB_SERVER_URL;
+    const result = deleteBranches({
+      repository,
+      branches: ["a", "nope", "b"],
+      token: "secret",
+      dryRun: true,
+    });
+    expect(result.rows).toEqual([
+      { branch: "a", result: "would be deleted" },
       { branch: "nope", result: "not found" },
-      { branch: "b", result: "not deleted" },
+      { branch: "b", result: "would be deleted" },
     ]);
-    expect(problem).toBe("nope does not exist in owner/repo");
+    expect(result.deleted).toEqual(["a", "b"]);
     expect(w.branches()).toEqual(["a", "b", "main"]);
   });
 
   it("deletes nothing if a branch is the default branch", () => {
     const w = world(["a"]);
-    const { rows, problem } = run(w, ["a", "main"]);
-    expect(rows[1]).toEqual({ branch: "main", result: "default branch" });
+    const { rows, problem } = run(w, ["a", "main", "nope"]);
+    expect(rows).toEqual([
+      { branch: "a", result: "not deleted" },
+      { branch: "main", result: "default branch" },
+      { branch: "nope", result: "not found" },
+    ]);
     expect(problem).toContain("main is the default branch");
     expect(w.branches()).toEqual(["a", "main"]);
   });
@@ -151,7 +193,7 @@ describe("the action", () => {
     expect(w.branches()).toEqual(["c", "main"]);
   });
 
-  it("fails, with a summary, and deletes nothing if a branch is missing", async () => {
+  it("deletes the others, and says which is not found", async () => {
     const w = world(["a"]);
     const summary = path.join(
       fs.mkdtempSync(path.join(os.tmpdir(), "s-")),
@@ -161,10 +203,49 @@ describe("the action", () => {
       ...w.env,
       GITHUB_STEP_SUMMARY: summary,
     });
+    expect(result.code).toBe(0);
+    expect(result.outputs.deleted).toBe("a");
+    expect(result.outputs.missing).toBe("nope");
+    const text = fs.readFileSync(summary, "utf8");
+    expect(text).toContain("| `nope` | not found |");
+    expect(text).toContain(
+      "1 branch deleted, atomically, 1 branch not found (gone already)",
+    );
+    expect(w.branches()).toEqual(["main"]);
+  });
+
+  it("deletes nothing in a dry run, and says so", async () => {
+    const w = world(["a", "b"]);
+    const summary = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "s-")),
+      "s",
+    );
+    const result = await runAction(
+      "src/index.js",
+      { ...inputs("a\nb"), "dry-run": "true" },
+      { ...w.env, GITHUB_STEP_SUMMARY: summary },
+    );
+    expect(result.code).toBe(0);
+    const text = fs.readFileSync(summary, "utf8");
+    expect(text).toContain("### Delete branches in owner/repo (dry run)");
+    expect(text).toContain("| `a` | would be deleted |");
+    expect(text).toContain("2 branches would be deleted, atomically");
+    expect(w.branches()).toEqual(["a", "b", "main"]);
+  });
+
+  it("fails, with a summary, if a branch is the default branch", async () => {
+    const w = world(["a"]);
+    const summary = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "s-")),
+      "s",
+    );
+    const result = await runAction("src/index.js", inputs("a\nmain"), {
+      ...w.env,
+      GITHUB_STEP_SUMMARY: summary,
+    });
     expect(result.code).not.toBe(0);
-    expect(result.stdout).toContain("Nothing was deleted: nope does not exist");
-    expect(fs.readFileSync(summary, "utf8")).toContain(
-      "| `nope` | not found |",
+    expect(result.stdout).toContain(
+      "Nothing was deleted: main is the default branch",
     );
     expect(result.outputs.deleted).toBeUndefined();
     expect(w.branches()).toEqual(["a", "main"]);

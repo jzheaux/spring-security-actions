@@ -51,12 +51,23 @@ export function repositoryUrl(repository) {
 
 /**
  * Deletes the branches of a repository at once, or none: git push --atomic --delete, which
- * GitHub applies as one transaction. It first reads the branches of the repository, and
- * refuses, deleting nothing, if one of them does not exist or is the default branch.
- * It returns { rows, problem }: for every branch what happened, and why it failed (the
- * problem is undefined if the branches were deleted).
+ * GitHub applies as one transaction. It first reads the branches of the repository. A branch
+ * that does not exist is skipped (it is gone already, so a run can be repeated), and the rest
+ * are deleted in one push. It refuses, deleting nothing, if one of them is the default
+ * branch, and fails, deleting nothing, if GitHub refuses the push for one of them.
+ * With dryRun nothing is deleted, and the result says what would be.
+ *
+ * It returns { rows, deleted, missing, problem, dryRun }: for every branch what happened
+ * (deleted, would be deleted, not found, not deleted or default branch), the branches that
+ * were (or would be) deleted, the ones that do not exist, and why it failed (the problem is
+ * undefined if it did not).
  */
-export function deleteBranches({ repository, branches, token }) {
+export function deleteBranches({
+  repository,
+  branches,
+  token,
+  dryRun = false,
+}) {
   const url = repositoryUrl(repository);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "delete-"));
   try {
@@ -70,29 +81,32 @@ export function deleteBranches({ repository, branches, token }) {
         .filter(Boolean),
     );
     const missing = branches.filter((b) => !existing.has(b));
-    const isDefault = branches.filter((b) => b === defaultBranch);
-    const refused = (result, problem) => ({
-      rows: branches.map((branch) => ({
+    const toDelete = branches.filter((b) => existing.has(b));
+    const rowsFor = (result) =>
+      branches.map((branch) => ({
         branch,
-        result: missing.includes(branch)
-          ? "not found"
-          : isDefault.includes(branch)
-            ? "default branch"
-            : result,
-      })),
-      problem,
-    });
-    if (isDefault.length > 0) {
-      return refused(
-        "not deleted",
-        `${isDefault[0]} is the default branch of ${repository}, which is not deleted`,
-      );
+        result: missing.includes(branch) ? "not found" : result,
+      }));
+    if (toDelete.includes(defaultBranch)) {
+      return {
+        rows: rowsFor("not deleted").map((row) =>
+          row.branch === defaultBranch
+            ? { ...row, result: "default branch" }
+            : row,
+        ),
+        deleted: [],
+        missing,
+        problem: `${defaultBranch} is the default branch of ${repository}, which is not deleted`,
+        dryRun,
+      };
     }
-    if (missing.length > 0) {
-      return refused(
-        "not deleted",
-        `${missing.join(", ")} ${missing.length === 1 ? "does" : "do"} not exist in ${repository}`,
-      );
+    if (toDelete.length === 0 || dryRun) {
+      return {
+        rows: rowsFor("would be deleted"),
+        deleted: dryRun ? toDelete : [],
+        missing,
+        dryRun,
+      };
     }
     const pushed = gitTry(
       directory,
@@ -101,17 +115,18 @@ export function deleteBranches({ repository, branches, token }) {
       "--atomic",
       url,
       "--delete",
-      ...branches.map((b) => `refs/heads/${b}`),
+      ...toDelete.map((b) => `refs/heads/${b}`),
     );
     if (pushed.code !== 0) {
       return {
-        rows: branches.map((branch) => ({ branch, result: "not deleted" })),
+        rows: rowsFor("not deleted"),
+        deleted: [],
+        missing,
         problem: `The push was refused: ${pushed.stderr}`,
+        dryRun,
       };
     }
-    return {
-      rows: branches.map((branch) => ({ branch, result: "deleted" })),
-    };
+    return { rows: rowsFor("deleted"), deleted: toDelete, missing, dryRun };
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -133,32 +148,53 @@ export function branchCell(repository, { branch, result }) {
   return `[${name}](${server}/${repository}/tree/${encoded})`;
 }
 
+/** The line under the table of the summary. */
+function conclusion({ rows, deleted, missing, problem, dryRun }) {
+  if (problem) {
+    return `Nothing was deleted: ${problem}`;
+  }
+  const noun = (n) => `${n} ${n === 1 ? "branch" : "branches"}`;
+  const notFound =
+    missing.length > 0
+      ? `, ${noun(missing.length)} not found (gone already)`
+      : "";
+  if (deleted.length === 0 && !dryRun) {
+    return `Nothing to delete: ${noun(rows.length)} not found (gone already)`;
+  }
+  return `${noun(deleted.length)} ${dryRun ? "would be deleted" : "deleted"}, atomically${notFound}`;
+}
+
 export async function main() {
   const repository = core.getInput("repository", { required: true });
   const token = core.getInput("token", { required: true });
   core.setSecret(token);
+  const dryRun = core.getInput("dry-run").trim().toLowerCase() === "true";
   const branches = parseBranches(core.getInput("branches"));
-  const { rows, problem } = deleteBranches({ repository, branches, token });
+  const result = deleteBranches({ repository, branches, token, dryRun });
   addSummary(
     [
-      `### Delete branches in ${repository}`,
+      `### Delete branches in ${repository}${dryRun ? " (dry run)" : ""}`,
       "",
       table(
         ["Branch", "Result"],
-        rows.map((row) => [branchCell(repository, row), row.result]),
+        result.rows.map((row) => [branchCell(repository, row), row.result]),
       ),
       "",
-      problem
-        ? `Nothing was deleted: ${problem}`
-        : `${rows.length} ${rows.length === 1 ? "branch" : "branches"} deleted, atomically`,
+      conclusion(result),
     ].join("\n"),
   );
-  if (problem) {
-    throw new Error(`Nothing was deleted: ${problem}`);
+  if (result.problem) {
+    throw new Error(`Nothing was deleted: ${result.problem}`);
   }
-  core.setOutput("deleted", branches.join("\n"));
-  for (const branch of branches) {
-    core.info(`Deleted ${branch} of ${repository}`);
+  core.setOutput("deleted", result.deleted.join("\n"));
+  core.setOutput("missing", result.missing.join("\n"));
+  for (const branch of result.deleted) {
+    core.info(
+      `${dryRun ? "Would delete" : "Deleted"} ${branch} of ${repository}`,
+    );
+  }
+  for (const branch of result.missing) {
+    core.info(`${branch} of ${repository} does not exist: skipped`);
   }
 }
 

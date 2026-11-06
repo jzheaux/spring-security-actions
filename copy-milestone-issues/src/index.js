@@ -354,7 +354,7 @@ export async function main() {
     required: true,
   });
   const milestone = core.getInput("milestone", { required: true });
-  const dryRun = core.getBooleanInput("dry-run");
+  const dryRun = core.getInput("dry-run").trim().toLowerCase() === "true";
   const octokit = createOctokit({ token: core.getInput("token") });
   const input = { source, destination, milestone };
   const result = await run({ ...input, dryRun }, { octokit });

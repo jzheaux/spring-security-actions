@@ -37049,7 +37049,7 @@ async function main() {
     required: true,
   });
   const milestone = getInput("milestone", { required: true });
-  const dryRun = getBooleanInput("dry-run");
+  const dryRun = getInput("dry-run").trim().toLowerCase() === "true";
   const octokit = createOctokit({ token: getInput("token") });
   const input = { source, destination, milestone };
   const result = await run({ ...input, dryRun }, { octokit });
