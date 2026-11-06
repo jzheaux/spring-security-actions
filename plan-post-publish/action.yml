@@ -1,0 +1,58 @@
+name: "plan-post-publish"
+description: "Plans what happens after a release is made public: its kind, whether its issues are copied, the merges of its tag and the branches to delete. It changes nothing"
+
+inputs:
+  release-version:
+    description: "The release version, which is the tag, for example 7.1.3. The output release-version of compute-tag-versions."
+    required: true
+  base-version:
+    description: "The release version without its -M<n> or -RC<n>, for example 7.1.0. The output base-version of compute-tag-versions."
+    required: true
+  generation:
+    description: "The generation of the version, for example 7.1.x. The output generation of compute-tag-versions."
+    required: true
+  hotfix:
+    description: "true if the version is a hotfix. The output hotfix of compute-tag-versions."
+    required: false
+    default: "false"
+  oss-repository:
+    description: "The OSS repository (owner/repo), which has the tag and the OSS branches of an OSS release."
+    required: true
+  commercial-repository:
+    description: "The commercial repository (owner/repo), which has the embargoed and release branches."
+    required: true
+  project:
+    description: "The project in the Spring projects API, for example spring-security."
+    required: true
+  api-url:
+    description: "The Spring projects API."
+    required: false
+    default: "https://api.spring.io"
+  dry-run:
+    description: "true if the run is a dry run, which the summary says."
+    required: false
+    default: "false"
+  plan-file:
+    description: "Where to write the plan, as JSON. The default is post-publish/plan.json in RUNNER_TEMP."
+    required: false
+  token:
+    description: "A token that can read both repositories (contents and issues read)."
+    required: true
+
+outputs:
+  plan-file:
+    description: "The file with the plan, as JSON."
+  kind:
+    description: "oss, hotfix or lts."
+  copy:
+    description: "true if the issues of the milestone are copied: an OSS release whose milestone is in both repositories."
+  merge:
+    description: "oss or lts if the tag is merged, and none for a hotfix."
+  snapshot-version:
+    description: "The version of the snapshot branch, for example 7.1.3-INTERNAL-SNAPSHOT (an OSS release) or 7.0.9.1-SNAPSHOT."
+  delete-branches:
+    description: "The branches to delete, release/<version> and the snapshot branch, one per line."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"
