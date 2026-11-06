@@ -47,6 +47,7 @@ function identify(directory) {
   git(directory, "config", "user.name", "Alice");
   git(directory, "config", "user.email", "alice@example.com");
   git(directory, "config", "commit.gpgsign", "false");
+  git(directory, "config", "tag.gpgsign", "false");
 }
 
 // what each generation has in its catalog
@@ -84,12 +85,35 @@ export const CATALOGS = {
  *
  * `conflict` makes the tag change a file that 7.1.x changes too, in another way.
  */
-export function createFixture({ conflict = false } = {}) {
+const built = new Map();
+
+export function createFixture({ conflict = false, fresh = false } = {}) {
+  // The repositories are made once for the tests of a file, and each test gets a clone of
+  // the commercial one of its own. A test that pushes to the repositories asks for fresh ones.
+  const key = String(conflict);
+  if (!fresh && built.has(key)) {
+    return cloneOf(built.get(key));
+  }
+  const repositories = buildRepositories({ conflict });
+  if (!fresh) {
+    built.set(key, repositories);
+  }
+  return cloneOf(repositories);
+}
+
+function cloneOf(repositories) {
+  const work = fs.mkdtempSync(path.join(repositories.root, "work-"));
+  git(repositories.root, "clone", "-q", repositories.commercial, work);
+  identify(work);
+  git(work, "checkout", "-q", "--detach", "origin/embargoed/active/main");
+  return { ...repositories, work };
+}
+
+function buildRepositories({ conflict }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "post-publish-"));
   const oss = path.join(root, "owner", "spring-security.git");
   const commercial = path.join(root, "owner", "spring-security-commercial.git");
   const seed = path.join(root, "seed");
-  const work = path.join(root, "work");
   fs.mkdirSync(path.dirname(oss), { recursive: true });
   git(root, "init", "-q", "--bare", "-b", "main", oss);
   git(root, "init", "-q", "--bare", "-b", "main", commercial);
@@ -225,14 +249,10 @@ export function createFixture({ conflict = false } = {}) {
   ).split("\n");
   git(seed, "push", "-q", "commercial", ...refs, "refs/tags/5.8.30");
 
-  git(root, "clone", "-q", commercial, work);
-  identify(work);
-  git(work, "checkout", "-q", "--detach", "origin/embargoed/active/main");
   return {
     root,
     oss,
     commercial,
-    work,
     seed,
     /** What a branch of a bare repository has in a file, or undefined. */
     show(repository, ref, file) {

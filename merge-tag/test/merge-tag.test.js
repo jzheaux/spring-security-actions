@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { catalogVersions, mergeTag, summaryOf } from "../src/index.js";
 import { createFixture, git, ltsPlan, ossPlan } from "./support/fixture.js";
 import { runAction } from "./support/run-action.js";
@@ -25,10 +25,17 @@ const versionAt = (f, result, name) =>
 
 const OSS_CHAIN = ["7.0.x", "7.1.x", "main"];
 
+// One merge of the OSS release 7.0.9 through the whole chain, which the tests that only read
+// what it did share: a merge makes many git commands, and these tests do not change it.
+let f;
+let result;
+beforeAll(() => {
+  f = createFixture();
+  result = run(f, ossPlan("7.0.9", OSS_CHAIN));
+});
+
 describe("an OSS release", () => {
   it("merges the tag into its branch, and forward, in the order of the freeze, with these messages", () => {
-    const f = createFixture();
-    const result = run(f, ossPlan("7.0.9", OSS_CHAIN));
     expect(result.kind).toBe("oss");
     expect(result.merges.map((m) => [m.repository, m.into, m.message])).toEqual(
       [
@@ -96,8 +103,6 @@ describe("an OSS release", () => {
   });
 
   it("brings the fix of the tag into every branch, the OSS, frozen and active ones", () => {
-    const f = createFixture();
-    const result = run(f, ossPlan("7.0.9", OSS_CHAIN));
     for (const name of [
       "7.0.x",
       "7.1.x",
@@ -112,8 +117,6 @@ describe("an OSS release", () => {
   });
 
   it("keeps the version of gradle.properties of every branch", () => {
-    const f = createFixture();
-    const result = run(f, ossPlan("7.0.9", OSS_CHAIN));
     expect(versionAt(f, result, "7.0.x")).toBe("7.0.9-SNAPSHOT");
     expect(versionAt(f, result, "7.1.x")).toBe("7.1.3-SNAPSHOT");
     expect(versionAt(f, result, "main")).toBe("7.2.0-SNAPSHOT");
@@ -132,8 +135,6 @@ describe("an OSS release", () => {
   });
 
   it("takes the catalog of the tag into its branch, keeps the one of each generation across, and takes the one of the source down", () => {
-    const f = createFixture();
-    const result = run(f, ossPlan("7.0.9", OSS_CHAIN));
     const tag = {
       "spring-framework": "7.0.11",
       reactor: "2025.0.9",
@@ -164,8 +165,6 @@ describe("an OSS release", () => {
   });
 
   it("says in the merges what each changed in the versions of the catalog", () => {
-    const f = createFixture();
-    const result = run(f, ossPlan("7.0.9", OSS_CHAIN));
     const changes = (into, source) =>
       result.merges.find((m) => m.into === into && m.source === source).catalog;
     expect(
@@ -207,7 +206,7 @@ describe("an OSS release", () => {
   });
 
   it("does nothing a second time, after the branches were pushed", () => {
-    const f = createFixture();
+    const f = createFixture({ fresh: true });
     const first = run(f, ossPlan("7.0.9", OSS_CHAIN));
     for (const b of first.branches) {
       const remote = b.repository === "oss" ? f.oss : f.commercial;
@@ -339,9 +338,7 @@ describe("catalogVersions", () => {
 
 describe("the summary", () => {
   it("lists the merges in order, with the changes in the catalog", () => {
-    const f = createFixture();
-    const plan = ossPlan("7.0.9", OSS_CHAIN);
-    const text = summaryOf(plan, run(f, plan), true);
+    const text = summaryOf(ossPlan("7.0.9", OSS_CHAIN), result, true);
     expect(text).toContain(
       "### Merges of the tag 7.0.9 (dry run: nothing is pushed)",
     );
