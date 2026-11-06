@@ -36,9 +36,9 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`plan-freeze`](plan-freeze/README.md) | Plans a code freeze: the next versions, the releases to mark ready, and everything that stops it. |
 | [`plan-post-publish`](plan-post-publish/README.md) | Plans what happens after a release is made public: its kind, whether its issues are copied, the merges of its tag and the branches to delete. |
 | [`plan-release-branches`](plan-release-branches/README.md) | What the push of an embargoed branch builds. |
-| [`push-merges`](push-merges/README.md) | Checks that no commercial code goes to OSS, and pushes the branches that a tag was merged into, OSS first, atomically and without force. |
 | [`push-branches`](push-branches/README.md) | Pushes branches at once or none, and summarizes them. |
 | [`push-freeze`](push-freeze/README.md) | Checks that no commercial code goes to OSS, and pushes the branches of a code freeze, atomically and without force. |
+| [`push-merges`](push-merges/README.md) | Checks that no commercial code goes to OSS, and pushes the branches that a tag was merged into, OSS first, atomically and without force. |
 | [`ready-train`](ready-train/README.md) | Runs the workflow Release Train - Ready of the project on each release branch of a code freeze, and waits for it. |
 | [`set-version`](set-version/README.md) | Sets the version of `gradle.properties`, in a commit of its own. |
 | [`start-branch`](start-branch/README.md) | Starts (or resets) a branch at a commit or a branch. |
@@ -47,6 +47,8 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 ## The workflows of the release automation
 
 [`release-branches.yml`](.github/workflows/release-branches.yml) is a reusable workflow that builds `release/<version>` and the snapshot branches on a push to an embargoed branch, with the actions above and nothing else (every step is an action). [docs/release-branches.md](docs/release-branches.md) is the guide: what it builds, how to call it, the secret and the tokens it needs, and what to do when it fails.
+
+[`post-publish.yml`](.github/workflows/post-publish.yml) is a reusable workflow for what follows once a release is public: it copies the issues of its milestone to OSS, merges its tag forward, and deletes the branches that were built for the release. It is run when the tag is pushed, or by hand, with a dry run. [docs/post-publish.md](docs/post-publish.md) is the guide: the callers, the token, and what to do when it fails.
 
 [`code-freeze.yml`](.github/workflows/code-freeze.yml) is a reusable workflow for the code freeze of a project: it moves every branch to its next development version, merges forward, marks the releases ready and pushes, with a dry run that is on by default. [docs/code-freeze.md](docs/code-freeze.md) is the guide, with the caller, the stub that the default branch of the commercial repository needs, and the guarantee that nothing commercial reaches OSS.
 
