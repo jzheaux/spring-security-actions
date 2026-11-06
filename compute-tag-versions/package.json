@@ -1,0 +1,25 @@
+{
+  "name": "compute-tag-versions",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Works out the release version and the snapshot version of a tag",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "format": "prettier --write 'src/**/*.js' 'test/**/*.js'",
+    "check": "prettier --check 'src/**/*.js' 'test/**/*.js'",
+    "compile": "ncc build src/index.js --out dist --no-source-map-register",
+    "build": "npm run format && npm run compile",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@actions/core": "^3.0.1"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "0.45.0",
+    "prettier": "3.9.10",
+    "vitest": "^5.0.0"
+  }
+}

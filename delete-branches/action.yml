@@ -1,0 +1,27 @@
+name: "delete-branches"
+description: "Deletes branches of a repository at once, or none (git push --atomic --delete), and skips the ones that do not exist"
+
+inputs:
+  repository:
+    description: "The repository (owner/repo) to delete the branches of."
+    required: true
+  branches:
+    description: "The branches to delete, one per line, without refs/heads/."
+    required: true
+  dry-run:
+    description: "true to delete nothing and say, in the summary, what would be deleted."
+    required: false
+    default: "false"
+  token:
+    description: "A token that may push to the repository (contents write)."
+    required: true
+
+outputs:
+  deleted:
+    description: "The branches that were deleted (or would be, in a dry run), one per line."
+  missing:
+    description: "The branches that do not exist, and were skipped, one per line."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

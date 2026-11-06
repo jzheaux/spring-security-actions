@@ -1,0 +1,35 @@
+name: "backup-branches"
+description: "Backs up branches that are going to be deleted: a clone with only those branches, and the commands to restore them"
+
+inputs:
+  repository:
+    description: "The repository (owner/repo) that has the branches."
+    required: true
+  branches:
+    description: "The branches to back up, one per line, without refs/heads/. A branch that does not exist is skipped."
+    required: true
+  name:
+    description: "The name of the backup, which is the name of its directory and of the artifact that the workflow uploads, for example restore-deleted-branches-7.0.1."
+    required: true
+  directory:
+    description: "Where to make the clone. It must not exist, or be empty. The default is the name, in RUNNER_TEMP."
+    required: false
+  token:
+    description: "A token that may read the repository (contents read)."
+    required: true
+
+outputs:
+  directory:
+    description: "The directory of the clone, to upload as the artifact."
+  name:
+    description: "The name of the backup."
+  count:
+    description: "The number of branches that were backed up. If it is 0 there is nothing to upload."
+  branches:
+    description: "The branches that were backed up, as branch=commit, one per line."
+  missing:
+    description: "The branches that do not exist, one per line."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

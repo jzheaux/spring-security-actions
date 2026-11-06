@@ -1,0 +1,150 @@
+name: post-publish
+
+# What is done after a release was made public, which is days after it was built, once its tag
+# is pushed (the tag is the release version, 7.1.3). The branches of the release that were built
+# for the testing and the staging are not needed any more, and the fixes that the tag made public
+# have to reach the newer branches:
+#
+#   1. Plan (read-only): the kind of the release (an OSS release, a hotfix or a long-term support
+#      one), whether its issues are copied, the branches to delete, and the branches that the tag is
+#      merged forward through, which come from the generations of the Spring projects API. Everything
+#      that stops it is listed at once, and nothing is changed.
+#   2. Back-up: a clone with the branches that are to be deleted, uploaded as an artifact of this run
+#      (restore-deleted-branches-<tag>), with the commands that put them back.
+#   3. Copy: the issues of the milestone of the tag are copied from the commercial repository to
+#      the OSS one, for an OSS release only, without their body.
+#   4. Merge: the tag is merged into its branch, and forward, in a clone: the OSS branches, and then
+#      the frozen and active ones, or the long-term support ones. A hotfix is not merged.
+#   5. Check and push: no commercial code goes to OSS, and the pushes would be accepted
+#      (git push --dry-run). A dry run ends here. Then OSS is pushed, and then the commercial
+#      repository, each in one atomic push, without force.
+#   6. Delete: release/<version> and the snapshot branch, in one atomic push.
+#
+# This is a reusable workflow: the repository of a project, the OSS one or the commercial one, calls
+# it from a workflow that runs when a tag is pushed, and by hand (workflow_dispatch) with the tag as
+# an input, see docs/post-publish.md for the callers and the secret. The work is always done in the
+# commercial repository, which is the OSS one with -commercial. The actions are the ones of this
+# repository, each in a directory of its own with a README. Nothing in this workflow is a script: what
+# it does is in the actions.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "The tag of the release, which is its version, for example 7.1.3"
+        type: string
+        required: true
+      dry-run:
+        description: "Only plan, back up, and make the merges in a clone of the runner, and say what would be done: nothing is copied, pushed or deleted"
+        type: boolean
+        required: false
+        default: true
+      runs-on:
+        description: "The runner of the job: a label, such as ubuntu22-2-8 for the runners of the organization. A caller that passes an empty value, as a variable that is not set is, gets the default"
+        type: string
+        required: false
+        default: ubuntu-latest
+    secrets:
+      RELEASE_AUTOMATION_TOKEN:
+        description: "The token that checks out and pushes the commercial repository, pushes the OSS repository, and reads and writes the issues and the labels of both (Contents: Read and write, Issues: Read and write, on both repositories)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-publish-${{ github.repository }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  post-publish:
+    name: Post publish
+    runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
+    steps:
+      - name: Name the repositories
+        id: repositories
+        uses: spring-io/spring-security-actions/name-repositories@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+      # All the branches of the commercial repository, and no credentials left in the checkout: the
+      # back-up is uploaded, and the actions that push have the token of their own.
+      - name: Check out the commercial repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.repositories.outputs.commercial-repository }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+          persist-credentials: false
+      - name: Set the git identity
+        uses: spring-io/spring-security-actions/git-identity@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+      - name: Work out the versions of the tag
+        id: versions
+        uses: spring-io/spring-security-actions/compute-tag-versions@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+        with:
+          tag: ${{ inputs.tag }}
+      - name: Plan what is done
+        id: plan
+        uses: spring-io/spring-security-actions/plan-post-publish@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+        with:
+          release-version: ${{ steps.versions.outputs.release-version }}
+          base-version: ${{ steps.versions.outputs.base-version }}
+          generation: ${{ steps.versions.outputs.generation }}
+          hotfix: ${{ steps.versions.outputs.hotfix }}
+          oss-repository: ${{ steps.repositories.outputs.oss-repository }}
+          commercial-repository: ${{ steps.repositories.outputs.commercial-repository }}
+          project: ${{ steps.repositories.outputs.project }}
+          dry-run: ${{ inputs.dry-run }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      # Before anything is changed: the branches that are deleted last are the ones that are backed up.
+      - name: Back up the branches that are deleted
+        id: backup
+        uses: spring-io/spring-security-actions/backup-branches@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+        with:
+          repository: ${{ steps.repositories.outputs.commercial-repository }}
+          branches: ${{ steps.plan.outputs.delete-branches }}
+          name: restore-deleted-branches-${{ inputs.tag }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      # An artifact of this run, not of the repository. It is a .git directory, so hidden files are in.
+      - name: Attach the back-up to the run
+        if: ${{ steps.backup.outputs.count != '0' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.backup.outputs.name }}
+          path: ${{ steps.backup.outputs.directory }}
+          include-hidden-files: true
+          overwrite: true
+      - name: Copy the issues of the milestone to the OSS repository
+        if: ${{ steps.plan.outputs.copy == 'true' }}
+        uses: spring-io/spring-security-actions/copy-milestone-issues@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+        with:
+          source-repository: ${{ steps.repositories.outputs.commercial-repository }}
+          destination-repository: ${{ steps.repositories.outputs.oss-repository }}
+          milestone: ${{ inputs.tag }}
+          dry-run: ${{ inputs.dry-run }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      - name: Merge the tag into its branch, and forward, locally
+        if: ${{ steps.plan.outputs.merge != 'none' }}
+        uses: spring-io/spring-security-actions/merge-tag@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+        with:
+          dry-run: ${{ inputs.dry-run }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      # Nothing from the commercial repository may reach OSS, and the pushes must be accepted.
+      - name: Check that no commercial code goes to OSS, and that the pushes would be accepted
+        if: ${{ steps.plan.outputs.merge != 'none' }}
+        uses: spring-io/spring-security-actions/push-merges@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+        with:
+          mode: check
+          summary: ${{ inputs.dry-run }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      - name: Push OSS, and then the commercial repository
+        if: ${{ steps.plan.outputs.merge != 'none' && !inputs.dry-run }}
+        uses: spring-io/spring-security-actions/push-merges@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+        with:
+          mode: push
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+      # Last: a branch that failed to be copied or merged is not deleted, and the run can be made again.
+      - name: Delete the branches of the release
+        uses: spring-io/spring-security-actions/delete-branches@75b549cf0b23c4173e420b9fc32c0e6f7817514f # 0.0.19
+        with:
+          repository: ${{ steps.repositories.outputs.commercial-repository }}
+          branches: ${{ steps.plan.outputs.delete-branches }}
+          dry-run: ${{ inputs.dry-run }}
+          token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}

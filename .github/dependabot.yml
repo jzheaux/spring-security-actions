@@ -11,6 +11,7 @@ updates:
       - /compute-build-environment
       - /compute-release-version
       - /compute-secret-names
+      - /compute-tag-versions
       - /deploy-artifacts
       - /ensure-artifacts
       - /ensure-dependency-issues
@@ -40,9 +41,13 @@ updates:
     directories:
       - /apply-commercial-license
       - /apply-freeze
+      - /backup-branches
       - /check-not-ready
       - /close-milestones
       - /compute-release-version
+      - /compute-tag-versions
+      - /copy-milestone-issues
+      - /delete-branches
       - /ensure-dependency-issues
       - /freeze-summary
       - /git-identity
@@ -50,11 +55,14 @@ updates:
       - /load-train
       - /map-train-versions
       - /merge-release
+      - /merge-tag
       - /name-repositories
       - /plan-freeze
+      - /plan-post-publish
       - /plan-release-branches
       - /push-branches
       - /push-freeze
+      - /push-merges
       - /ready-train
       - /set-version
       - /start-branch

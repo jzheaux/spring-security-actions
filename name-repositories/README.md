@@ -5,6 +5,7 @@ Names what follows from the repository that runs the workflow. The embargoed bra
 ## What it does
 
 - A repository without `-commercial` is its own project and OSS repository.
+- The commercial repository is the project with `-commercial`, so a workflow that runs from the OSS repository finds the commercial one.
 - It fails for something that is not `owner/name`.
 
 ## Inputs
@@ -20,6 +21,7 @@ Names what follows from the repository that runs the workflow. The embargoed bra
 | `owner` | The owner of the repository. |
 | `project` | The name of the repository without `-commercial`: the project id in the release train. |
 | `oss-repository` | `owner/project`: the repository with the milestones and the issues. |
+| `commercial-repository` | `owner/project-commercial`: the repository with the embargoed and release branches. The repository itself when it runs from the commercial one. |
 
 ## Secrets and permissions
 
