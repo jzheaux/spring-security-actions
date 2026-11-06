@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import { call, createOctokit, parseRepository } from "./octokit.js";
 import { TitledError, execute, isMain } from "./run.js";
+import { addSummary, table } from "./summary.js";
 
 /** The comment that an original gets: the link to its copy, and a marker that a run reads to know that it was copied. */
 export function copiedComment(destination, number) {
@@ -52,17 +53,30 @@ async function findMilestone(octokit, repository, milestone) {
   return milestones.find((m) => m.title === milestone);
 }
 
+const labelName = (label) => (typeof label === "string" ? label : label.name);
+
 /**
  * Copies the issues and the pull requests of a milestone of the source repository to the
- * destination repository, as issues with the same title, body (unless omitBody), labels, issue
- * type, assignees and milestone, and closed if the original is. Nothing is added to a copy.
- * Each original gets a comment with the link to its copy, which is also what a later run reads:
- * an original that has it is skipped. Before anything is copied, every assignee has to be
- * assignable in the destination, as GitHub drops the ones that are not without an error.
- * It returns { copied: [{ from, to, url }], skipped: [{ from, to }] }.
+ * destination repository, as issues with the same title, labels, issue type, assignees and
+ * milestone, and closed if the original is. Nothing else is copied: not the body, which can
+ * name the source, and not the comments. Nothing is added to a copy either. The milestone
+ * is never created: it has to exist in both repositories.
+ *
+ * - A label that the destination lacks is created, with the colour and the description that
+ *   it has in the source.
+ * - An assignee who cannot be assigned in the destination (GitHub drops them without an
+ *   error) is left out, and the result says so.
+ * - Each original gets a comment with the link to its copy, which is also what a later run
+ *   reads: an original that has it is skipped, so a run can be repeated.
+ * - With dryRun nothing is written: the result says what would be copied.
+ *
+ * It returns { copied, skipped, labelsToCreate, dropped, dryRun }: for every item that is
+ * (or would be) copied { from, to, url, title, state, labels, assignees }, where `to` and
+ * `url` are empty in a dry run; the skipped originals; the names of the labels that were
+ * (or would be) created; and the assignees that were left out, with their issues.
  */
 export async function run(
-  { source, destination, milestone, omitBody = false },
+  { source, destination, milestone, dryRun = false },
   { octokit },
 ) {
   const from = parseRepository(source);
@@ -85,7 +99,7 @@ export async function run(
   if (!destinationMilestone) {
     throw new TitledError(
       "Milestone not found",
-      `${destination} has no milestone ${milestone}: create it first, for example with ensure-milestone`,
+      `${destination} has no milestone ${milestone}: it is not created, as it has to exist in both repositories`,
     );
   }
 
@@ -121,8 +135,9 @@ export async function run(
     }
   }
 
-  // GitHub drops an assignee that cannot be assigned, silently: so they are all checked first
-  const unassignable = new Map();
+  // GitHub drops an assignee that cannot be assigned, silently: so they are all checked
+  // first, and the ones that cannot be assigned are left out.
+  const dropped = new Map();
   const checked = new Map();
   for (const item of pending) {
     for (const login of logins(item.assignees)) {
@@ -144,39 +159,80 @@ export async function run(
         }
       }
       if (!checked.get(key)) {
-        unassignable.set(login, [
-          ...(unassignable.get(login) ?? []),
-          `${source}#${item.number}`,
-        ]);
+        const issues = dropped.get(login) ?? [];
+        issues.push(`${source}#${item.number}`);
+        dropped.set(login, issues);
       }
     }
   }
-  if (unassignable.size) {
-    const lines = [...unassignable].map(
-      ([login, numbers]) =>
-        `${login} (${numbers.join(", ")}) cannot be assigned in ${destination}`,
-    );
-    throw new TitledError(
-      "Assignees",
-      `Nothing was copied, as GitHub would drop the assignees that cannot be assigned:\n${lines.join("\n")}`,
-    );
+  const assignable = (item) =>
+    logins(item.assignees).filter((login) => checked.get(login.toLowerCase()));
+
+  // the labels that the destination lacks are made like the ones of the source
+  const existing = new Set(
+    (
+      await call(
+        `Reading the labels of ${destination}`,
+        octokit.paginate(octokit.rest.issues.listLabelsForRepo, {
+          ...to,
+          per_page: 100,
+        }),
+      )
+    ).map((label) => label.name.toLowerCase()),
+  );
+  const missing = new Map();
+  for (const item of pending) {
+    for (const label of item.labels ?? []) {
+      const name = labelName(label);
+      if (
+        !existing.has(name.toLowerCase()) &&
+        !missing.has(name.toLowerCase())
+      ) {
+        missing.set(name.toLowerCase(), label);
+      }
+    }
+  }
+  const labelsToCreate = [...missing.values()].map(labelName);
+  if (!dryRun) {
+    for (const label of missing.values()) {
+      const details = typeof label === "string" ? {} : label;
+      await call(
+        `Creating the label ${labelName(label)} in ${destination}`,
+        octokit.rest.issues.createLabel({
+          ...to,
+          name: labelName(label),
+          ...(details.color && { color: details.color }),
+          ...(details.description && { description: details.description }),
+        }),
+      );
+    }
   }
 
   const copied = [];
   for (const item of pending) {
     const original = `${source}#${item.number}`;
-    const body = omitBody ? "" : (item.body ?? "");
     const type = item.pull_request ? undefined : item.type?.name;
-    const assignees = logins(item.assignees);
+    const assignees = assignable(item);
+    const labels = (item.labels ?? []).map(labelName);
+    const record = {
+      from: original,
+      to: "",
+      url: item.html_url ?? "",
+      title: item.title,
+      state: item.state,
+      labels,
+      assignees,
+    };
+    if (dryRun) {
+      copied.push(record);
+      continue;
+    }
     const { data: copy } = await call(
       `Copying ${original} to ${destination}`,
       octokit.rest.issues.create({
         ...to,
         title: item.title,
-        ...(body && { body }),
-        labels: (item.labels ?? []).map((label) =>
-          typeof label === "string" ? label : label.name,
-        ),
+        labels,
         assignees,
         milestone: destinationMilestone.number,
         ...(type && { type }),
@@ -210,13 +266,86 @@ export async function run(
     if (wanted.join() !== actual.join()) {
       throw new TitledError(
         "Assignees",
-        `${copyName} has the assignees [${actual.join(", ")}], and ${original} has [${wanted.join(", ")}]`,
+        `${copyName} has the assignees [${actual.join(", ")}], and ${original} has [${wanted.join(", ")}] that can be assigned`,
       );
     }
-    copied.push({ from: original, to: copyName, url: copy.html_url ?? "" });
+    copied.push({
+      ...record,
+      to: copyName,
+      url: copy.html_url ?? "",
+    });
     core.info(`Copied ${original} to ${copyName}`);
   }
-  return { copied, skipped };
+  return {
+    copied,
+    skipped,
+    labelsToCreate,
+    dropped: [...dropped].map(([login, issues]) => ({ login, issues })),
+    dryRun,
+  };
+}
+
+const issueUrl = (repository, number) =>
+  `https://github.com/${repository}/issues/${number}`;
+
+/** `owner/repo#12` as a link to the issue on GitHub. */
+function link(reference) {
+  const [repository, number] = reference.split("#");
+  return `[${reference}](${issueUrl(repository, number)})`;
+}
+
+const code = (names) => names.map((name) => `\`${name}\``).join(", ");
+
+/**
+ * The summary of a run: what was copied (or, in a dry run, what would be), with the link to
+ * every original, the labels that were created, and the assignees that were left out.
+ */
+export function summaryOf({ source, destination, milestone }, result) {
+  const { copied, skipped, labelsToCreate, dropped, dryRun } = result;
+  const header = [
+    "Original",
+    ...(dryRun ? [] : ["Copy"]),
+    "Title",
+    "State",
+    "Labels",
+    "Assignees",
+  ];
+  const rows = copied.map((item) => [
+    link(item.from),
+    ...(dryRun ? [] : [link(item.to)]),
+    item.title.replace(/\|/g, "\\|"),
+    item.state,
+    code(item.labels) || "none",
+    item.assignees.join(", ") || "none",
+  ]);
+  const lines = [
+    `### Issues of the milestone ${milestone}: ${source} to ${destination}${dryRun ? " (dry run)" : ""}`,
+    "",
+  ];
+  if (copied.length > 0) {
+    lines.push(
+      dryRun ? "Would be copied:" : "Copied:",
+      "",
+      table(header, rows),
+      "",
+    );
+  } else {
+    lines.push(dryRun ? "Nothing would be copied." : "Nothing was copied.", "");
+  }
+  lines.push(
+    `Labels ${dryRun ? "to create" : "created"} in ${destination}: ${code(labelsToCreate) || "none"}.`,
+    "",
+    dropped.length > 0
+      ? `Assignees left out, as they cannot be assigned in ${destination}: ${dropped.map((d) => `${d.login} (${d.issues.map(link).join(", ")})`).join(", ")}.`
+      : "Assignees left out: none.",
+  );
+  if (skipped.length > 0) {
+    lines.push(
+      "",
+      `Copied already, and skipped: ${skipped.map((s) => link(s.from)).join(", ")}.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 export async function main() {
@@ -225,20 +354,19 @@ export async function main() {
     required: true,
   });
   const milestone = core.getInput("milestone", { required: true });
-  const omitBody = core.getBooleanInput("omit-body");
+  const dryRun = core.getBooleanInput("dry-run");
   const octokit = createOctokit({ token: core.getInput("token") });
-  const { copied, skipped } = await run(
-    { source, destination, milestone, omitBody },
-    { octokit },
-  );
-  core.setOutput("copied", String(copied.length));
-  core.setOutput("skipped", String(skipped.length));
-  for (const item of skipped) {
+  const input = { source, destination, milestone };
+  const result = await run({ ...input, dryRun }, { octokit });
+  addSummary(summaryOf(input, result));
+  core.setOutput("copied", String(result.copied.length));
+  core.setOutput("skipped", String(result.skipped.length));
+  for (const item of result.skipped) {
     core.info(`Skipped ${item.from}: copied to ${destination}#${item.to}`);
   }
   core.notice(
-    `Copied ${copied.length} from ${source} to ${destination} for the milestone ${milestone}, and skipped ${skipped.length} that were copied already`,
-    { title: "Issues copied" },
+    `${dryRun ? "Would copy" : "Copied"} ${result.copied.length} from ${source} to ${destination} for the milestone ${milestone}, and skipped ${result.skipped.length} that were copied already`,
+    { title: dryRun ? "Issues to copy" : "Issues copied" },
   );
 }
 

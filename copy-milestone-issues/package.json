@@ -2,7 +2,7 @@
   "name": "copy-milestone-issues",
   "version": "0.0.1",
   "private": true,
-  "description": "Copies the issues and the pull requests of a milestone to another repository, as issues",
+  "description": "Copies the issues and the pull requests of a milestone to another repository, as issues without their body",
   "type": "module",
   "engines": {
     "node": ">=24"

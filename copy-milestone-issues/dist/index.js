@@ -28627,7 +28627,8 @@ __nccwpck_require__.d(__webpack_exports__, {
   Li: () => (/* binding */ closeReason),
   gw: () => (/* binding */ copiedComment),
   iW: () => (/* binding */ main),
-  eF: () => (/* binding */ run)
+  eF: () => (/* binding */ run),
+  YG: () => (/* binding */ summaryOf)
 });
 
 ;// CONCATENATED MODULE: external "os"
@@ -36581,7 +36582,118 @@ async function execute(action) {
   }
 }
 
+;// CONCATENATED MODULE: ./src/summary.js
+
+
+
+/**
+ * Adds markdown to the summary of the step (the file named by GITHUB_STEP_SUMMARY). Run
+ * locally, where there is no such file, it prints the markdown instead.
+ */
+function addSummary(markdown) {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (file) {
+    external_node_fs_namespaceObject.appendFileSync(file, `${markdown}\n`);
+  } else {
+    info(markdown);
+  }
+}
+
+/** A markdown table from a header and rows, each a list of cells. */
+function table(header, rows) {
+  const line = (cells) => `| ${cells.join(" | ")} |`;
+  return [line(header), line(header.map(() => "---")), ...rows.map(line)].join(
+    "\n",
+  );
+}
+
+/**
+ * The text as it is shown, in markdown: the characters that mean something (a link, a code
+ * span, emphasis, a table cell, a tag) are escaped. The subject of a commit is the text of
+ * somebody else.
+ */
+function escapeMarkdown(text) {
+  return String(text).replace(/([\\`*_[\]<>|])/g, "\\$1");
+}
+
+/**
+ * The address of the repository that runs the workflow (GITHUB_SERVER_URL, GITHUB_REPOSITORY),
+ * without a slash at the end. Undefined when it is not known, run locally for example: the
+ * summary then has no links.
+ */
+function repositoryUrl() {
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!repository) {
+    return undefined;
+  }
+  const server = (
+    process.env.GITHUB_SERVER_URL || "https://github.com"
+  ).replace(/\/+$/, "");
+  return `${server}/${repository}`;
+}
+
+/** A sha as a short code, linked to its commit when the repository is known. */
+function commitLink(sha) {
+  const short = `\`${sha.slice(0, 7)}\``;
+  const repository = repositoryUrl();
+  return repository ? `[${short}](${repository}/commit/${sha})` : short;
+}
+
+/**
+ * The cell of a branch in the summary: its name, linked to the branch on GitHub when the
+ * repository is known (GITHUB_REPOSITORY), and plain otherwise.
+ */
+function branchCell(branch) {
+  const name = `\`${branch}\``;
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!repository) {
+    return name;
+  }
+  const server = (
+    process.env.GITHUB_SERVER_URL || "https://github.com"
+  ).replace(/\/+$/, "");
+  const encoded = branch.split("/").map(encodeURIComponent).join("/");
+  return `[${name}](${server}/${repository}/tree/${encoded})`;
+}
+
+/**
+ * The cell of a version in the summary: linked to the milestone of the release, if there
+ * is one. A snapshot version (-SNAPSHOT, -INTERNAL-SNAPSHOT) has no milestone, so it is
+ * plain text.
+ */
+function versionCell(version, milestoneUrl) {
+  if (!milestoneUrl || version.endsWith("-SNAPSHOT")) {
+    return version;
+  }
+  return `[${version}](${milestoneUrl})`;
+}
+
+const TRAIN_STATUS = {
+  "not-joined": "not joined yet",
+  joined: "joined, not ready yet",
+  ready: "ready",
+};
+
+/**
+ * The line of the summary that links to the release train that was used: the text is the
+ * link, followed by the state of the train (linked) and where the release is in it (the status of check-not-ready).
+ * Nothing without a train.
+ */
+function trainLine(train, trainUrl, status, state, stateUrl) {
+  if (!train) {
+    return [];
+  }
+  const name = `Release train ${train}`;
+  let text = trainUrl ? `[${name}](${trainUrl})` : name;
+  if (state) {
+    text += ` is ${stateUrl ? `[${state}](${stateUrl})` : state}`;
+  }
+  const where = TRAIN_STATUS[status];
+  return [where ? `${text}: ${where}` : text, ""];
+}
+
 ;// CONCATENATED MODULE: ./src/index.js
+
 
 
 
@@ -36636,17 +36748,30 @@ async function findMilestone(octokit, repository, milestone) {
   return milestones.find((m) => m.title === milestone);
 }
 
+const labelName = (label) => (typeof label === "string" ? label : label.name);
+
 /**
  * Copies the issues and the pull requests of a milestone of the source repository to the
- * destination repository, as issues with the same title, body (unless omitBody), labels, issue
- * type, assignees and milestone, and closed if the original is. Nothing is added to a copy.
- * Each original gets a comment with the link to its copy, which is also what a later run reads:
- * an original that has it is skipped. Before anything is copied, every assignee has to be
- * assignable in the destination, as GitHub drops the ones that are not without an error.
- * It returns { copied: [{ from, to, url }], skipped: [{ from, to }] }.
+ * destination repository, as issues with the same title, labels, issue type, assignees and
+ * milestone, and closed if the original is. Nothing else is copied: not the body, which can
+ * name the source, and not the comments. Nothing is added to a copy either. The milestone
+ * is never created: it has to exist in both repositories.
+ *
+ * - A label that the destination lacks is created, with the colour and the description that
+ *   it has in the source.
+ * - An assignee who cannot be assigned in the destination (GitHub drops them without an
+ *   error) is left out, and the result says so.
+ * - Each original gets a comment with the link to its copy, which is also what a later run
+ *   reads: an original that has it is skipped, so a run can be repeated.
+ * - With dryRun nothing is written: the result says what would be copied.
+ *
+ * It returns { copied, skipped, labelsToCreate, dropped, dryRun }: for every item that is
+ * (or would be) copied { from, to, url, title, state, labels, assignees }, where `to` and
+ * `url` are empty in a dry run; the skipped originals; the names of the labels that were
+ * (or would be) created; and the assignees that were left out, with their issues.
  */
 async function run(
-  { source, destination, milestone, omitBody = false },
+  { source, destination, milestone, dryRun = false },
   { octokit },
 ) {
   const from = parseRepository(source);
@@ -36669,7 +36794,7 @@ async function run(
   if (!destinationMilestone) {
     throw new TitledError(
       "Milestone not found",
-      `${destination} has no milestone ${milestone}: create it first, for example with ensure-milestone`,
+      `${destination} has no milestone ${milestone}: it is not created, as it has to exist in both repositories`,
     );
   }
 
@@ -36705,8 +36830,9 @@ async function run(
     }
   }
 
-  // GitHub drops an assignee that cannot be assigned, silently: so they are all checked first
-  const unassignable = new Map();
+  // GitHub drops an assignee that cannot be assigned, silently: so they are all checked
+  // first, and the ones that cannot be assigned are left out.
+  const dropped = new Map();
   const checked = new Map();
   for (const item of pending) {
     for (const login of logins(item.assignees)) {
@@ -36728,39 +36854,80 @@ async function run(
         }
       }
       if (!checked.get(key)) {
-        unassignable.set(login, [
-          ...(unassignable.get(login) ?? []),
-          `${source}#${item.number}`,
-        ]);
+        const issues = dropped.get(login) ?? [];
+        issues.push(`${source}#${item.number}`);
+        dropped.set(login, issues);
       }
     }
   }
-  if (unassignable.size) {
-    const lines = [...unassignable].map(
-      ([login, numbers]) =>
-        `${login} (${numbers.join(", ")}) cannot be assigned in ${destination}`,
-    );
-    throw new TitledError(
-      "Assignees",
-      `Nothing was copied, as GitHub would drop the assignees that cannot be assigned:\n${lines.join("\n")}`,
-    );
+  const assignable = (item) =>
+    logins(item.assignees).filter((login) => checked.get(login.toLowerCase()));
+
+  // the labels that the destination lacks are made like the ones of the source
+  const existing = new Set(
+    (
+      await call(
+        `Reading the labels of ${destination}`,
+        octokit.paginate(octokit.rest.issues.listLabelsForRepo, {
+          ...to,
+          per_page: 100,
+        }),
+      )
+    ).map((label) => label.name.toLowerCase()),
+  );
+  const missing = new Map();
+  for (const item of pending) {
+    for (const label of item.labels ?? []) {
+      const name = labelName(label);
+      if (
+        !existing.has(name.toLowerCase()) &&
+        !missing.has(name.toLowerCase())
+      ) {
+        missing.set(name.toLowerCase(), label);
+      }
+    }
+  }
+  const labelsToCreate = [...missing.values()].map(labelName);
+  if (!dryRun) {
+    for (const label of missing.values()) {
+      const details = typeof label === "string" ? {} : label;
+      await call(
+        `Creating the label ${labelName(label)} in ${destination}`,
+        octokit.rest.issues.createLabel({
+          ...to,
+          name: labelName(label),
+          ...(details.color && { color: details.color }),
+          ...(details.description && { description: details.description }),
+        }),
+      );
+    }
   }
 
   const copied = [];
   for (const item of pending) {
     const original = `${source}#${item.number}`;
-    const body = omitBody ? "" : (item.body ?? "");
     const type = item.pull_request ? undefined : item.type?.name;
-    const assignees = logins(item.assignees);
+    const assignees = assignable(item);
+    const labels = (item.labels ?? []).map(labelName);
+    const record = {
+      from: original,
+      to: "",
+      url: item.html_url ?? "",
+      title: item.title,
+      state: item.state,
+      labels,
+      assignees,
+    };
+    if (dryRun) {
+      copied.push(record);
+      continue;
+    }
     const { data: copy } = await call(
       `Copying ${original} to ${destination}`,
       octokit.rest.issues.create({
         ...to,
         title: item.title,
-        ...(body && { body }),
-        labels: (item.labels ?? []).map((label) =>
-          typeof label === "string" ? label : label.name,
-        ),
+        labels,
         assignees,
         milestone: destinationMilestone.number,
         ...(type && { type }),
@@ -36794,13 +36961,86 @@ async function run(
     if (wanted.join() !== actual.join()) {
       throw new TitledError(
         "Assignees",
-        `${copyName} has the assignees [${actual.join(", ")}], and ${original} has [${wanted.join(", ")}]`,
+        `${copyName} has the assignees [${actual.join(", ")}], and ${original} has [${wanted.join(", ")}] that can be assigned`,
       );
     }
-    copied.push({ from: original, to: copyName, url: copy.html_url ?? "" });
+    copied.push({
+      ...record,
+      to: copyName,
+      url: copy.html_url ?? "",
+    });
     info(`Copied ${original} to ${copyName}`);
   }
-  return { copied, skipped };
+  return {
+    copied,
+    skipped,
+    labelsToCreate,
+    dropped: [...dropped].map(([login, issues]) => ({ login, issues })),
+    dryRun,
+  };
+}
+
+const issueUrl = (repository, number) =>
+  `https://github.com/${repository}/issues/${number}`;
+
+/** `owner/repo#12` as a link to the issue on GitHub. */
+function src_link(reference) {
+  const [repository, number] = reference.split("#");
+  return `[${reference}](${issueUrl(repository, number)})`;
+}
+
+const code = (names) => names.map((name) => `\`${name}\``).join(", ");
+
+/**
+ * The summary of a run: what was copied (or, in a dry run, what would be), with the link to
+ * every original, the labels that were created, and the assignees that were left out.
+ */
+function summaryOf({ source, destination, milestone }, result) {
+  const { copied, skipped, labelsToCreate, dropped, dryRun } = result;
+  const header = [
+    "Original",
+    ...(dryRun ? [] : ["Copy"]),
+    "Title",
+    "State",
+    "Labels",
+    "Assignees",
+  ];
+  const rows = copied.map((item) => [
+    src_link(item.from),
+    ...(dryRun ? [] : [src_link(item.to)]),
+    item.title.replace(/\|/g, "\\|"),
+    item.state,
+    code(item.labels) || "none",
+    item.assignees.join(", ") || "none",
+  ]);
+  const lines = [
+    `### Issues of the milestone ${milestone}: ${source} to ${destination}${dryRun ? " (dry run)" : ""}`,
+    "",
+  ];
+  if (copied.length > 0) {
+    lines.push(
+      dryRun ? "Would be copied:" : "Copied:",
+      "",
+      table(header, rows),
+      "",
+    );
+  } else {
+    lines.push(dryRun ? "Nothing would be copied." : "Nothing was copied.", "");
+  }
+  lines.push(
+    `Labels ${dryRun ? "to create" : "created"} in ${destination}: ${code(labelsToCreate) || "none"}.`,
+    "",
+    dropped.length > 0
+      ? `Assignees left out, as they cannot be assigned in ${destination}: ${dropped.map((d) => `${d.login} (${d.issues.map(src_link).join(", ")})`).join(", ")}.`
+      : "Assignees left out: none.",
+  );
+  if (skipped.length > 0) {
+    lines.push(
+      "",
+      `Copied already, and skipped: ${skipped.map((s) => src_link(s.from)).join(", ")}.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 async function main() {
@@ -36809,20 +37049,19 @@ async function main() {
     required: true,
   });
   const milestone = getInput("milestone", { required: true });
-  const omitBody = getBooleanInput("omit-body");
+  const dryRun = getBooleanInput("dry-run");
   const octokit = createOctokit({ token: getInput("token") });
-  const { copied, skipped } = await run(
-    { source, destination, milestone, omitBody },
-    { octokit },
-  );
-  setOutput("copied", String(copied.length));
-  setOutput("skipped", String(skipped.length));
-  for (const item of skipped) {
+  const input = { source, destination, milestone };
+  const result = await run({ ...input, dryRun }, { octokit });
+  addSummary(summaryOf(input, result));
+  setOutput("copied", String(result.copied.length));
+  setOutput("skipped", String(result.skipped.length));
+  for (const item of result.skipped) {
     info(`Skipped ${item.from}: copied to ${destination}#${item.to}`);
   }
   notice(
-    `Copied ${copied.length} from ${source} to ${destination} for the milestone ${milestone}, and skipped ${skipped.length} that were copied already`,
-    { title: "Issues copied" },
+    `${dryRun ? "Would copy" : "Copied"} ${result.copied.length} from ${source} to ${destination} for the milestone ${milestone}, and skipped ${result.skipped.length} that were copied already`,
+    { title: dryRun ? "Issues to copy" : "Issues copied" },
   );
 }
 
@@ -36834,4 +37073,5 @@ var __webpack_exports__closeReason = __webpack_exports__.Li;
 var __webpack_exports__copiedComment = __webpack_exports__.gw;
 var __webpack_exports__main = __webpack_exports__.iW;
 var __webpack_exports__run = __webpack_exports__.eF;
-export { __webpack_exports__closeReason as closeReason, __webpack_exports__copiedComment as copiedComment, __webpack_exports__main as main, __webpack_exports__run as run };
+var __webpack_exports__summaryOf = __webpack_exports__.YG;
+export { __webpack_exports__closeReason as closeReason, __webpack_exports__copiedComment as copiedComment, __webpack_exports__main as main, __webpack_exports__run as run, __webpack_exports__summaryOf as summaryOf };

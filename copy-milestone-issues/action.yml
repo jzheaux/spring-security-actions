@@ -1,18 +1,18 @@
 name: "copy-milestone-issues"
-description: "Copies the issues and the pull requests of a milestone of a repository to another repository, as issues, and comments on each original with the link to its copy"
+description: "Copies the issues and the pull requests of a milestone of a repository to another repository, as issues without their body, and comments on each original with the link to its copy"
 
 inputs:
   source-repository:
     description: "The repository (owner/repo) that has the milestone, whose issues and pull requests are copied. Each one gets a comment with the link to its copy."
     required: true
   destination-repository:
-    description: "The repository (owner/repo) that the issues are copied to. It needs a milestone of the same title, and the users that are assigned in the source need to be assignable in it."
+    description: "The repository (owner/repo) that the issues are copied to. It needs a milestone of the same title, which is never created. A label that it lacks is created, and a user that cannot be assigned in it is left out."
     required: true
   milestone:
     description: "The title of the milestone in both repositories, for example `7.0.1`."
     required: true
-  omit-body:
-    description: "true to copy the issues without their body. Everything else is copied. The default, false, copies the body as it is."
+  dry-run:
+    description: "true to write nothing and say, in the summary, what would be copied, with the labels that would be created."
     required: false
     default: "false"
   token:

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closeReason, copiedComment, run } from "../src/index.js";
+import { closeReason, copiedComment, run, summaryOf } from "../src/index.js";
 
 const source = "spring-projects/spring-security-commercial";
 const destination = "spring-projects/spring-security";
@@ -28,13 +28,16 @@ function fakeOctokit({
   destinationMilestones = [{ title: "7.0.1", number: 8 }],
   unassignable = [],
   dropAssignees = false,
+  destinationLabels = ["type: bug", "in: oauth2"],
 } = {}) {
   const created = [];
+  const labelsCreated = [];
   const posted = [];
   const updates = [];
   let next = 100;
   return {
     created,
+    labelsCreated,
     posted,
     updates,
     paginate: async (method, params) => method(params),
@@ -45,6 +48,10 @@ function fakeOctokit({
             ? sourceMilestones
             : destinationMilestones,
         listForRepo: () => items,
+        listLabelsForRepo: () => destinationLabels.map((name) => ({ name })),
+        createLabel: async (request) => {
+          labelsCreated.push(request);
+        },
         listComments: ({ issue_number }) => comments[issue_number] ?? [],
         checkUserCanBeAssigned: async ({ assignee }) => {
           if (unassignable.includes(assignee)) {
@@ -78,7 +85,7 @@ function fakeOctokit({
 const input = { source, destination, milestone: "7.0.1" };
 
 describe("copy-milestone-issues", () => {
-  it("copies an issue with its title, body, labels, assignees and the milestone of the destination, and nothing more", async () => {
+  it("copies an issue with its title, labels, assignees and the milestone of the destination, and nothing more", async () => {
     const octokit = fakeOctokit({
       items: [
         issue(586, {
@@ -95,18 +102,20 @@ describe("copy-milestone-issues", () => {
         owner: "spring-projects",
         repo: "spring-security",
         title: "Fix CVE-2026-41008",
-        body: "Body of 586",
         labels: ["type: bug", "in: oauth2"],
         assignees: ["jgrandja"],
         milestone: 8,
         type: "Bug",
       },
     ]);
-    expect(result.copied).toEqual([
+    expect(result.copied).toMatchObject([
       {
         from: `${source}#586`,
         to: `${destination}#101`,
         url: `https://github.com/${destination}/issues/101`,
+        title: "Fix CVE-2026-41008",
+        labels: ["type: bug", "in: oauth2"],
+        assignees: ["jgrandja"],
       },
     ]);
     expect(result.skipped).toEqual([]);
@@ -132,18 +141,15 @@ describe("copy-milestone-issues", () => {
     expect(octokit.posted[0].body).toBe(copiedComment(destination, 101));
   });
 
-  it("copies without the body when omit-body is true, and keeps the rest", async () => {
-    const octokit = fakeOctokit({ items: [issue(586)] });
-    await run({ ...input, omitBody: true }, { octokit });
+  it("never copies the body, which can name the source, or the comments", async () => {
+    const octokit = fakeOctokit({
+      items: [issue(586, { body: "Found in spring-security-commercial#5" })],
+    });
+    await run(input, { octokit });
     expect(octokit.created[0]).not.toHaveProperty("body");
     expect(octokit.created[0].title).toBe("Issue 586");
     expect(octokit.created[0].labels).toEqual(["type: bug"]);
-  });
-
-  it("copies an issue without a body when it has none", async () => {
-    const octokit = fakeOctokit({ items: [issue(586, { body: null })] });
-    await run(input, { octokit });
-    expect(octokit.created[0]).not.toHaveProperty("body");
+    expect(JSON.stringify(octokit.created)).not.toContain("commercial");
   });
 
   it("closes the copy of a closed issue with the reason of the original", async () => {
@@ -245,20 +251,25 @@ describe("copy-milestone-issues", () => {
     expect(result.skipped).toEqual([]);
   });
 
-  it("copies nothing when an assignee cannot be assigned in the destination, and names it", async () => {
+  it("copies without an assignee who cannot be assigned in the destination, and says so", async () => {
     const octokit = fakeOctokit({
       items: [
         issue(1, { assignees: [{ login: "jgrandja" }] }),
-        issue(2, { assignees: [{ login: "outsider" }] }),
+        issue(2, { assignees: [{ login: "outsider" }, { login: "jgrandja" }] }),
         issue(3, { assignees: [{ login: "outsider" }] }),
       ],
       unassignable: ["outsider"],
     });
-    await expect(run(input, { octokit })).rejects.toThrow(
-      `outsider (${source}#2, ${source}#3) cannot be assigned in ${destination}`,
-    );
-    expect(octokit.created).toEqual([]);
-    expect(octokit.posted).toEqual([]);
+    const result = await run(input, { octokit });
+    expect(octokit.created.map((request) => request.assignees)).toEqual([
+      ["jgrandja"],
+      ["jgrandja"],
+      [],
+    ]);
+    expect(result.dropped).toEqual([
+      { login: "outsider", issues: [`${source}#2`, `${source}#3`] },
+    ]);
+    expect(result.copied).toHaveLength(3);
   });
 
   it("does not check the assignees of what is skipped", async () => {
@@ -277,7 +288,7 @@ describe("copy-milestone-issues", () => {
       dropAssignees: true,
     });
     await expect(run(input, { octokit })).rejects.toThrow(
-      `${destination}#101 has the assignees [], and ${source}#1 has [jgrandja]`,
+      `${destination}#101 has the assignees [], and ${source}#1 has [jgrandja] that can be assigned`,
     );
   });
 
@@ -288,15 +299,16 @@ describe("copy-milestone-issues", () => {
     );
   });
 
-  it("fails if the destination has no such milestone, and says to create it", async () => {
+  it("fails if the destination has no such milestone, and does not create it", async () => {
     const octokit = fakeOctokit({
       items: [issue(1)],
       destinationMilestones: [],
     });
     await expect(run(input, { octokit })).rejects.toThrow(
-      `${destination} has no milestone 7.0.1: create it first`,
+      `${destination} has no milestone 7.0.1: it is not created`,
     );
     expect(octokit.created).toEqual([]);
+    expect(octokit.labelsCreated).toEqual([]);
   });
 
   it("fails if the source and the destination are the same repository", async () => {
@@ -308,7 +320,159 @@ describe("copy-milestone-issues", () => {
 
   it("copies nothing from a milestone that has no issues", async () => {
     const octokit = fakeOctokit();
-    expect(await run(input, { octokit })).toEqual({ copied: [], skipped: [] });
+    expect(await run(input, { octokit })).toEqual({
+      copied: [],
+      skipped: [],
+      labelsToCreate: [],
+      dropped: [],
+      dryRun: false,
+    });
+  });
+});
+
+describe("the labels", () => {
+  const label = (name, color, description) => ({ name, color, description });
+
+  it("creates a label that the destination lacks, like the one of the source, before the issue", async () => {
+    const octokit = fakeOctokit({
+      items: [
+        issue(1, {
+          labels: [
+            label("type: bug", "e3d9fc", "A general bug"),
+            label(
+              "status: forward-port",
+              "fef2c0",
+              "An issue tracking a forward-port",
+            ),
+          ],
+        }),
+      ],
+    });
+    const result = await run(input, { octokit });
+    expect(octokit.labelsCreated).toEqual([
+      {
+        owner: "spring-projects",
+        repo: "spring-security",
+        name: "status: forward-port",
+        color: "fef2c0",
+        description: "An issue tracking a forward-port",
+      },
+    ]);
+    expect(result.labelsToCreate).toEqual(["status: forward-port"]);
+    expect(octokit.created[0].labels).toEqual([
+      "type: bug",
+      "status: forward-port",
+    ]);
+  });
+
+  it("compares the names without their case, and creates a label once", async () => {
+    const octokit = fakeOctokit({
+      items: [
+        issue(1, {
+          labels: [label("TYPE: BUG", "e3d9fc"), label("new", "000000")],
+        }),
+        issue(2, { labels: [label("new", "000000")] }),
+      ],
+    });
+    await run(input, { octokit });
+    expect(octokit.labelsCreated.map((request) => request.name)).toEqual([
+      "new",
+    ]);
+  });
+});
+
+describe("a dry run", () => {
+  it("writes nothing, and says what would be copied, with the labels and the assignees", async () => {
+    const octokit = fakeOctokit({
+      items: [
+        issue(1, {
+          labels: [{ name: "brand new", color: "ffffff" }],
+          assignees: [{ login: "outsider" }, { login: "jgrandja" }],
+          state: "closed",
+        }),
+        issue(2),
+      ],
+      unassignable: ["outsider"],
+    });
+    const result = await run({ ...input, dryRun: true }, { octokit });
+    expect(octokit.created).toEqual([]);
+    expect(octokit.labelsCreated).toEqual([]);
+    expect(octokit.posted).toEqual([]);
+    expect(octokit.updates).toEqual([]);
+    expect(result.dryRun).toBe(true);
+    expect(result.labelsToCreate).toEqual(["brand new"]);
+    expect(
+      result.copied.map((item) => [item.from, item.to, item.assignees]),
+    ).toEqual([
+      [`${source}#1`, "", ["jgrandja"]],
+      [`${source}#2`, "", []],
+    ]);
+    expect(result.dropped).toEqual([
+      { login: "outsider", issues: [`${source}#1`] },
+    ]);
+  });
+
+  it("still skips what was copied already", async () => {
+    const octokit = fakeOctokit({
+      items: [issue(1, { comments: 1 })],
+      comments: { 1: [{ body: copiedComment(destination, 5) }] },
+    });
+    const result = await run({ ...input, dryRun: true }, { octokit });
+    expect(result.skipped).toHaveLength(1);
+    expect(result.copied).toEqual([]);
+  });
+});
+
+describe("the summary", () => {
+  const result = {
+    copied: [
+      {
+        from: `${source}#934`,
+        to: `${destination}#20001`,
+        title: "Merge Validate username length",
+        state: "closed",
+        labels: ["type: bug", "in: rsocket"],
+        assignees: ["rwinch"],
+      },
+    ],
+    skipped: [],
+    labelsToCreate: [],
+    dropped: [],
+    dryRun: false,
+  };
+  const names = { source, destination, milestone: "7.1.3" };
+
+  it("links the original and the copy of a real run", () => {
+    const text = summaryOf(names, result);
+    expect(text).toContain(
+      "### Issues of the milestone 7.1.3: spring-projects/spring-security-commercial to spring-projects/spring-security",
+    );
+    expect(text).toContain(
+      "[spring-projects/spring-security-commercial#934](https://github.com/spring-projects/spring-security-commercial/issues/934) | [spring-projects/spring-security#20001](https://github.com/spring-projects/spring-security/issues/20001)",
+    );
+    expect(text).toContain(
+      "Labels created in spring-projects/spring-security: none.",
+    );
+    expect(text).toContain("Assignees left out: none.");
+  });
+
+  it("says that a dry run would copy, with the labels and the assignees", () => {
+    const text = summaryOf(names, {
+      ...result,
+      dryRun: true,
+      copied: [{ ...result.copied[0], to: "" }],
+      labelsToCreate: ["status: forward-port"],
+      dropped: [{ login: "outsider", issues: [`${source}#934`] }],
+    });
+    expect(text).toContain("(dry run)");
+    expect(text).toContain("Would be copied:");
+    expect(text).not.toContain("| Copy |");
+    expect(text).toContain(
+      "Labels to create in spring-projects/spring-security: `status: forward-port`.",
+    );
+    expect(text).toContain(
+      "outsider ([spring-projects/spring-security-commercial#934]",
+    );
   });
 });
 
