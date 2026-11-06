@@ -1,35 +1,37 @@
 # compute-tag-versions
 
-Works out the release version and the snapshot version of a tag. It knows nothing about repositories: it only changes text.
+Works out what follows from the tag of a version: the version that a snapshot is made from, the generation, and whether it is a hotfix. It knows nothing about repositories: it only changes text.
 
 ## What it does
 
-- A leading `v` is not part of the release version: `v7.0.1` releases `7.0.1`. A tag without it is the release version as it is.
-- The snapshot version is the release version without its milestone (`-M1`) or release candidate (`-RC1`), and with the snapshot suffix, `-SNAPSHOT` unless the input `snapshot-suffix` says otherwise.
-- It fails if the tag is empty, or is only a `v`.
+- The tag is the release version as it is: `7.0.1`, and not `v7.0.1`. A tag that is not a version fails.
+- The base version is the release version without its milestone (`-M1`) or release candidate (`-RC1`): the snapshot version is the base version and a suffix, which depends on the kind of release, so it is not worked out here.
+- The generation is `<major>.<minor>.x`. A hotfix is in the generation of the version that it fixes.
+- A hotfix has a fourth number.
 
-| Tag | `release-version` | `snapshot-version` |
-|---|---|---|
-| `v7.0.1` | `7.0.1` | `7.0.1-SNAPSHOT` |
-| `7.0.1.1` | `7.0.1.1` | `7.0.1.1-SNAPSHOT` |
-| `v7.1.0-M2` | `7.1.0-M2` | `7.1.0-SNAPSHOT` |
-| `7.1.0-RC1` | `7.1.0-RC1` | `7.1.0-SNAPSHOT` |
-| `v7.0.1` with `snapshot-suffix: -INTERNAL-SNAPSHOT` | `7.0.1` | `7.0.1-INTERNAL-SNAPSHOT` |
-| `7.1.0-RC1` with `snapshot-suffix: -INTERNAL-SNAPSHOT` | `7.1.0-RC1` | `7.1.0-INTERNAL-SNAPSHOT` |
+| Tag | `base-version` | `generation` | `hotfix` |
+|---|---|---|---|
+| `7.0.1` | `7.0.1` | `7.0.x` | `false` |
+| `7.0.1.1` | `7.0.1.1` | `7.0.x` | `true` |
+| `7.1.0-M2` | `7.1.0` | `7.1.x` | `false` |
+| `7.1.0-RC1` | `7.1.0` | `7.1.x` | `false` |
+| `2021.2.9` | `2021.2.9` | `2021.2.x` | `false` |
+| `v7.0.1`, `7.0`, `7.1.0-RC` | fails | | |
 
 ## Inputs
 
-| Input | Default | Description |
+| Input | Required | Description |
 |---|---|---|
-| `tag` | required | The tag, for example `v7.0.1`. |
-| `snapshot-suffix` | `-SNAPSHOT` | The suffix of the snapshot version, for example `-INTERNAL-SNAPSHOT` for the snapshot that is only for a release train. |
+| `tag` | yes | The tag, for example `7.0.1`. |
 
 ## Outputs
 
 | Output | Description |
 |---|---|
-| `release-version` | The version of the release. |
-| `snapshot-version` | The version that follows the release. |
+| `release-version` | The tag. |
+| `base-version` | The version without its milestone or release candidate. |
+| `generation` | `<major>.<minor>.x`. |
+| `hotfix` | `true` or `false`. |
 
 ## Secrets and permissions
 
@@ -42,18 +44,7 @@ None.
   uses: spring-io/spring-security-actions/compute-tag-versions@v1
   with:
     tag: ${{ github.ref_name }}
-- run: echo "${{ steps.versions.outputs.snapshot-version }}"
-```
-
-A snapshot that is only for the release train:
-
-```yaml
-- id: versions
-  uses: spring-io/spring-security-actions/compute-tag-versions@v1
-  with:
-    tag: v7.0.1
-    snapshot-suffix: -INTERNAL-SNAPSHOT
-# release-version: 7.0.1, snapshot-version: 7.0.1-INTERNAL-SNAPSHOT
+- run: echo "${{ steps.versions.outputs.generation }}"
 ```
 
 ## Running it locally
@@ -62,7 +53,7 @@ A snapshot that is only for the release train:
 cd compute-tag-versions
 npm ci
 export GITHUB_OUTPUT=$(mktemp)
-env 'INPUT_TAG=v7.1.0-RC1' node src/index.js
+env 'INPUT_TAG=7.1.0-RC1' node src/index.js
 cat "$GITHUB_OUTPUT"
 ```
 

@@ -1,21 +1,20 @@
 name: "compute-tag-versions"
-description: "Works out the release version and the snapshot version of a tag"
+description: "Works out the base version, the generation and whether it is a hotfix, from the tag of a version"
 
 inputs:
   tag:
-    description: "The tag, for example v7.0.1, 7.1.0-RC1 or v7.1.0-M2"
+    description: "The tag, which is the release version, for example 7.0.1, 7.0.1.1 (a hotfix), 7.1.0-M2 or 7.1.0-RC1"
     required: true
-
-  snapshot-suffix:
-    description: "The suffix of the snapshot version, for example -INTERNAL-SNAPSHOT for the snapshot that is only for a release train"
-    required: false
-    default: "-SNAPSHOT"
 
 outputs:
   release-version:
-    description: "The tag without its leading v, for example 7.0.1 or 7.1.0-RC1"
-  snapshot-version:
-    description: "The release version without its -M<n> or -RC<n>, and with the snapshot suffix, for example 7.0.1-SNAPSHOT or 7.1.0-INTERNAL-SNAPSHOT"
+    description: "The tag, for example 7.0.1 or 7.1.0-RC1"
+  base-version:
+    description: "The release version without its -M<n> or -RC<n>, for example 7.1.0. The snapshot version is made from it"
+  generation:
+    description: "The generation, <major>.<minor>.x, for example 7.0.x for 7.0.1 and for the hotfix 7.0.1.1"
+  hotfix:
+    description: "true if the version has a fourth number, as 7.0.1.1 has, and false otherwise"
 
 runs:
   using: "node24"

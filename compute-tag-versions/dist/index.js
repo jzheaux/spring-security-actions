@@ -31626,30 +31626,45 @@ async function execute(action) {
 
 
 
+// <major>.<minor>.<patch>, a fourth number for a hotfix (7.0.1.1), and a milestone or a
+// release candidate (-M1, -RC2) at the end.
+const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(?:-(?:M|RC)\d+)?$/;
+
 /**
- * Works out the versions of a tag. A leading v is not part of the release version (v7.0.1
- * releases 7.0.1). The snapshot version is that release version, without its milestone or
- * release candidate (-M1, -RC2), and with the snapshot suffix (-SNAPSHOT unless told
- * otherwise): 7.1.0-RC2 is followed by 7.1.0-SNAPSHOT, or by 7.1.0-INTERNAL-SNAPSHOT.
+ * Works out what follows from a tag, which is the release version as it is (7.0.1, and
+ * not v7.0.1): the version without its milestone or release candidate (7.1.0-RC2 is
+ * the base version 7.1.0, which the snapshot version is made from), the generation that
+ * it belongs to (7.0.x for 7.0.1 and for the hotfix 7.0.1.1), and whether it is a hotfix
+ * (it has a fourth number). A tag that is not a version is an error.
  */
-function computeTagVersions(tag, snapshotSuffix = "-SNAPSHOT") {
-  const releaseVersion = (tag ?? "").trim().replace(/^v/, "");
-  if (!releaseVersion) {
-    throw new Error(`${tag} is not a tag to take a version from`);
+function computeTagVersions(tag) {
+  const releaseVersion = (tag ?? "").trim();
+  const match = VERSION.exec(releaseVersion);
+  if (!match) {
+    throw new Error(
+      `"${tag}" is not a tag of a version: expected <major>.<minor>.<patch>, with a fourth number for a hotfix, and -M<n> or -RC<n> for a milestone or a release candidate`,
+    );
   }
-  const base = releaseVersion.replace(/-(?:M|RC)\d+$/, "");
-  return { releaseVersion, snapshotVersion: `${base}${snapshotSuffix}` };
+  const [, major, minor, patch, hotfixNumber] = match;
+  const base = [major, minor, patch, hotfixNumber].filter(Boolean).join(".");
+  return {
+    releaseVersion,
+    baseVersion: base,
+    generation: `${major}.${minor}.x`,
+    hotfix: hotfixNumber !== undefined,
+  };
 }
 
 async function main() {
-  const { releaseVersion, snapshotVersion } = computeTagVersions(
-    getInput("tag", { required: true }),
-    getInput("snapshot-suffix") || "-SNAPSHOT",
-  );
-  info(`release-version: ${releaseVersion}`);
-  info(`snapshot-version: ${snapshotVersion}`);
-  setOutput("release-version", releaseVersion);
-  setOutput("snapshot-version", snapshotVersion);
+  const versions = computeTagVersions(getInput("tag", { required: true }));
+  info(`release-version: ${versions.releaseVersion}`);
+  info(`base-version: ${versions.baseVersion}`);
+  info(`generation: ${versions.generation}`);
+  info(`hotfix: ${versions.hotfix}`);
+  setOutput("release-version", versions.releaseVersion);
+  setOutput("base-version", versions.baseVersion);
+  setOutput("generation", versions.generation);
+  setOutput("hotfix", String(versions.hotfix));
 }
 
 if (isMain(import.meta.url)) {
