@@ -5,7 +5,8 @@ name: code-freeze
 # (release/<version>, built by the release-branches workflow) do the releasing.
 #
 #   1. Plan (read-only). The branches come from the Spring projects API (the OSS generations and the
-#      commercial, long-term support ones), or from the inputs branches and lts-branches. For each:
+#      commercial, long-term support ones), or from the inputs branches and lts-branches. The train
+#      is read from the release train repository (the input release-train-repository). For each:
 #      its version, the next one, and the release it needs, release/<version>, which must exist,
 #      have joined the release train and not be ready. Everything that stops the freeze is
 #      listed at once, and nothing is changed.
@@ -52,6 +53,11 @@ on:
         type: string
         required: false
         default: ubuntu-latest
+      release-train-repository:
+        description: "The repository of the release train (owner/repo). A caller that passes an empty value, as a variable that is not set is, gets the default"
+        type: string
+        required: false
+        default: spring-io/release-train
     secrets:
       RELEASE_AUTOMATION_TOKEN:
         description: "The token that checks out and pushes the commercial repository, fetches and pushes the OSS repository, reads the release train and writes the milestones of both (Issues: Read and write), and runs release-train-ready.yml on the release branches (Actions: Read and write)"
@@ -91,6 +97,7 @@ jobs:
         id: train
         uses: spring-io/spring-security-actions/load-train@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
+          release-train-repository: ${{ inputs.release-train-repository || 'spring-io/release-train' }}
           branch: ${{ inputs.release-train }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Plan the freeze
@@ -117,6 +124,7 @@ jobs:
         if: ${{ !inputs.dry-run }}
         uses: spring-io/spring-security-actions/ready-train@2611d7a0fa127ed8799a0c1f52e434dae6e1ef76 # 0.0.18
         with:
+          release-train-repository: ${{ inputs.release-train-repository || 'spring-io/release-train' }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Push the commercial repository, and then OSS
         if: ${{ !inputs.dry-run }}

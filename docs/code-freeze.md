@@ -8,7 +8,7 @@ It runs with a **dry run on by default**: it plans, makes the merges and the ver
 
 1. **The caller**, `.github/workflows/code-freeze.yml`, on the embargoed branches of the commercial repository (it comes with the merges forward). See [the caller](#the-caller).
 2. **The stub**, a `code-freeze.yml` on the default branch of the commercial repository (`main`), which never receives the embargoed merges. See [the stub](#the-stub-on-the-default-branch).
-3. **The secret** `RELEASE_AUTOMATION_TOKEN` in the commercial repository, with the permissions of [the token](#the-token).
+3. **The secret** `RELEASE_AUTOMATION_TOKEN` in the commercial repository, with the permissions of [the token](#the-token), and the variables `UBUNTU_RUNS_ON` (the runners of the organization) and, if it is not `spring-io/release-train`, `RELEASE_TRAIN_REPOSITORY` (the release train repository, `owner/repo`: the caller gives it as the input `release-train-repository`, and an empty value is the default).
 4. **The workflow `release-train-ready.yml`** on the release branches (the workflow generator makes it, as it does `release-train-join.yml`).
 5. For each release of the freeze, **`release/<version>` has been built and has joined the release train**: the release workflow does both when the embargoed branch is pushed.
 
@@ -89,6 +89,7 @@ jobs:
       lts-branches: ${{ inputs.lts-branches }}
       dry-run: ${{ inputs.dry-run }}
       runs-on: ${{ vars.UBUNTU_RUNS_ON }}
+      release-train-repository: ${{ vars.RELEASE_TRAIN_REPOSITORY }}
     secrets:
       RELEASE_AUTOMATION_TOKEN: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
 ```
@@ -144,7 +145,7 @@ Running the stub by accident changes nothing. Choose a branch that has the real 
 |---|---|---|---|
 | the commercial repository | check out, push the branches, run `release-train-ready.yml`, close and delete its milestones | **Contents: Read and write**, **Actions: Read and write**, **Issues: Read and write** | `repo` |
 | the OSS repository | fetch, push the branches, close its milestones | **Contents: Read and write**, **Issues: Read and write** | `repo` |
-| the release train repository | read the train | **Contents: Read** | `repo` |
+| the release train repository (`spring-io/release-train`, or `RELEASE_TRAIN_REPOSITORY`) | read the train | **Contents: Read** | `repo` |
 
 Both repositories must let the token push to their protected branches (a bypass in the ruleset), as the freeze pushes the version commits and the merges directly.
 
