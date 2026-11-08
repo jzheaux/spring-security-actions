@@ -32,6 +32,9 @@ inputs:
     description: "true if the run is a dry run, which the summary says."
     required: false
     default: "false"
+  ref:
+    description: "A branch or a commit of the commercial repository that stands in for the tag, for a dry run before the tag exists (for example release/7.1.3). Only with dry-run true, and only while the tag does not exist. Empty: the tag is used."
+    required: false
   plan-file:
     description: "Where to write the plan, as JSON. The default is post-publish/plan.json in RUNNER_TEMP."
     required: false

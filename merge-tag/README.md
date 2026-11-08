@@ -11,6 +11,8 @@ The branches of the OSS repository are worked on in `refs/post-publish/oss/<bran
 1. **OSS**, oldest first: the tag into the first branch (`Merge tag '7.0.9' into 7.0.x`), and then each branch into the next (`Merge branch '7.0.x' into 7.1.x`). This is done from the OSS repository alone, before any commercial branch reads it.
 2. **For each generation of the chain:** the frozen branch merges the frozen one before it across, and then the OSS branch **down** (`Merge branch '7.0.x' into 7.0.x`). The active branch merges the active one before it across, and then the frozen branch down.
 
+**A ref in place of the tag** (a dry run before the tag exists): if the plan has `merge.ref` (a name and the commit that `plan-post-publish` found), that commit, fetched from the commercial repository by its sha if the clone does not have it, is merged where the tag would be, for an OSS release and a long-term support one, with the message of the tag (`Merge tag '7.0.9' into 7.0.x`). The OSS repository is fetched for its branches only, with no tag. The merge file has the `ref`, and the summary says `ref release/7.0.9 (stands in for the tag)`.
+
 **A long-term support release** (the tag is in the commercial repository): the tag into its `embargoed/lts/<generation>` branch, and then each branch into the next (`Merge branch '6.4.x' into 6.5.x`). The OSS repository is **never** added or read.
 
 A merge is a real merge: everything that the source has comes, which is how the fixes arrive. Two files are settled, whether they conflict or not:

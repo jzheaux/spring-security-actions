@@ -1,0 +1,36 @@
+name: "export-merges"
+description: "Exports the branches that merge-tag made, in a clone of their own with a README, to look at in a dry run. It has no remote and no command that pushes"
+
+inputs:
+  plan-file:
+    description: "The plan (the output `plan-file` of `plan-post-publish`), for the names of the repositories. post-publish/plan.json in RUNNER_TEMP by default."
+    required: false
+  merge-file:
+    description: "What merge-tag did (its output `merge-file`). post-publish/merge.json in RUNNER_TEMP by default."
+    required: false
+  name:
+    description: "The name of the export, which is the name of its directory and of the artifact that the workflow uploads. merged-branches-<tag> by default."
+    required: false
+  directory:
+    description: "Where to make the export. It must not exist, or be empty. The default is the name, in RUNNER_TEMP."
+    required: false
+  dry-run:
+    description: "true if the run is a dry run, which the summary and the README say."
+    required: false
+    default: "false"
+  path:
+    description: "The directory of the clone that merge-tag worked in."
+    required: false
+    default: "."
+
+outputs:
+  directory:
+    description: "The directory of the export, to upload as the artifact."
+  name:
+    description: "The name of the export."
+  count:
+    description: "The number of branches that were exported. If it is 0 there is nothing to upload."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"

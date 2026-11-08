@@ -11,7 +11,7 @@ It does not trust how the branches were made. For every OSS branch it looks at w
 - has no `embargoed` in its message,
 - is a merge whose two parents are in OSS already or were made by `merge-tag`.
 
-The commits of the tag are not new: the tag came from OSS, so what it has is public (it has the fixes that were embargoed until the release). It fails with the title **Commercial code would reach OSS**, before anything is pushed. The pushes name each branch with an explicit refspec (`refs/post-publish/oss/7.1.x:refs/heads/7.1.x`): never `--all`, `--mirror`, tags or a force. The merges of a long-term support release or of a hotfix never have an OSS branch: if one has, it fails.
+In a dry run before the tag exists, the merge file has a `ref` (a commit of the commercial repository in the place of the tag), and the check **simulates**: it treats the commits of the ref as public, as they are once the tag is, and the summary says "Simulated: the tag does not exist yet". Any other commit that only the commercial repository has is still rejected, and a push with a ref fails, whatever the mode. The commits of the tag are not new: the tag came from OSS, so what it has is public (it has the fixes that were embargoed until the release). It fails with the title **Commercial code would reach OSS**, before anything is pushed. The pushes name each branch with an explicit refspec (`refs/post-publish/oss/7.1.x:refs/heads/7.1.x`): never `--all`, `--mirror`, tags or a force. The merges of a long-term support release or of a hotfix never have an OSS branch: if one has, it fails.
 
 ## The modes
 

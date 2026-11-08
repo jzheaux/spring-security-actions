@@ -9,7 +9,9 @@ export const DEFAULT_MERGE_FILE = "post-publish/merge.json";
 export const DEFAULT_PUSH_FILE = "post-publish/push.json";
 
 // The tag of the release is in a ref of this namespace (merge-tag put it there), and it came
-// from OSS for an OSS release: what it has is public.
+// from OSS for an OSS release: what it has is public. In a dry run before the tag exists, the
+// commit of a ref of the commercial repository is in its place (merge.ref), and its commits are
+// treated as public, which is said to be simulated: they are public once the tag is.
 export const TAG_REF = "refs/post-publish/tag";
 
 const lines = (text) => text.split("\n").filter(Boolean);
@@ -158,7 +160,16 @@ export function pushMerges({
     oss: { remote: ossRemote, branches: [], pushed: false },
     commercial: { remote: commercialRemote, branches: [], pushed: false },
     leakCheck: { problems: [], commits: 0 },
+    simulated: merge.ref ?? null,
   };
+  if (merge.ref && mode === "push") {
+    const error = new TitledError(
+      "Ref only for a dry run",
+      `Nothing was pushed. The merges of ${merge.tag} were made from the ref ${merge.ref.name}, which stands in for a tag that does not exist yet, and only a dry run may use it`,
+    );
+    error.result = result;
+    throw error;
+  }
   if (
     merge.kind !== "oss" &&
     merge.branches.some((b) => b.repository === "oss")
@@ -247,6 +258,11 @@ export function summaryOf(result) {
   if (result.oss.branches.length > 0) {
     out.push(
       `The OSS check: ${result.leakCheck.commits} commits ${dryRun ? "would be" : "were"} sent to OSS, all merges whose parents are in OSS.`,
+    );
+  }
+  if (result.simulated) {
+    out.push(
+      `Simulated: the tag does not exist yet, so the commits of \`${result.simulated.name}\` (${result.simulated.sha.slice(0, 7)}) were treated as public. Any other commit that only the commercial repository has is still rejected.`,
     );
   }
   if (dryRun && rows.length > 0) {

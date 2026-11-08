@@ -37,6 +37,7 @@ const notFound = () => Object.assign(new Error("Not Found"), { status: 404 });
  * has no way to write, so a plan that tried would fail.
  */
 function fakeOctokit({
+  commercialRefs = {},
   ossMilestones = [],
   commercialMilestones = [],
   ossTags = [],
@@ -76,6 +77,15 @@ function fakeOctokit({
         },
       },
       repos: {
+        getCommit: async ({ repo, ref }) => {
+          if (
+            repo !== "spring-security-commercial" ||
+            !(ref in commercialRefs)
+          ) {
+            throw Object.assign(new Error("No commit found"), { status: 422 });
+          }
+          return { data: { sha: commercialRefs[ref] } };
+        },
         getBranch: async ({ repo, branch }) => {
           if (!(branch in branches[repo])) {
             throw notFound();
@@ -181,6 +191,7 @@ describe("an OSS release", () => {
     expect(result.merge).toEqual({
       kind: "oss",
       tagRepository: oss,
+      ref: null,
       branches: [
         {
           generation: "7.1.x",
@@ -258,6 +269,133 @@ describe("an OSS release", () => {
   });
 });
 
+const SHA = "fc6c49669dfe4c8aa137d56855f01d9f1d1b3375";
+
+describe("a dry run before the tag exists", () => {
+  const before = (tag, overrides = {}) =>
+    everything({
+      ossTags: [],
+      commercialTags: [],
+      commercialRefs: { [`release/${tag}`]: SHA },
+      ...overrides,
+    });
+
+  it("merges the ref in place of the tag, and keeps the tag as the name of the release", async () => {
+    const { plan: result } = await run("7.1.3", before("7.1.3"), {
+      ref: "release/7.1.3",
+      dryRun: true,
+    });
+    expect(result).toMatchObject({
+      tag: "7.1.3",
+      kind: "oss",
+      copy: true,
+      snapshotVersion: "7.1.3-INTERNAL-SNAPSHOT",
+      deleteBranches: ["release/7.1.3", "embargoed/7.1.3-INTERNAL-SNAPSHOT"],
+      ref: { name: "release/7.1.3", sha: SHA },
+    });
+    expect(result.merge.ref).toEqual({ name: "release/7.1.3", sha: SHA });
+    expect(result.merge.branches.map((b) => b.branch)).toEqual([
+      "7.1.x",
+      "main",
+    ]);
+  });
+
+  it("works for a long-term support release", async () => {
+    const { plan: result } = await run("5.8.30", before("5.8.30"), {
+      ref: "release/5.8.30",
+      dryRun: true,
+    });
+    expect(result.merge).toMatchObject({
+      kind: "lts",
+      tagRepository: commercial,
+      ref: { name: "release/5.8.30", sha: SHA },
+    });
+  });
+
+  it("takes a commit as the ref", async () => {
+    const octokit = before("7.1.3", { commercialRefs: { [SHA]: SHA } });
+    const { plan: result } = await run("7.1.3", octokit, {
+      ref: SHA,
+      dryRun: true,
+    });
+    expect(result.ref).toEqual({ name: SHA, sha: SHA });
+  });
+
+  it("is refused in a real run, before anything is read", async () => {
+    await expect(
+      run("7.1.3", before("7.1.3"), { ref: "release/7.1.3", dryRun: false }),
+    ).rejects.toThrow("only a dry run may use it");
+    await expect(
+      run("7.1.3", before("7.1.3"), { ref: "release/7.1.3" }),
+    ).rejects.toThrow("only a dry run may use it");
+  });
+
+  it("fails naming both ways out when there is neither the tag nor a ref", async () => {
+    await expect(
+      run("7.1.3", before("7.1.3"), { dryRun: true }),
+    ).rejects.toThrow(
+      `${oss} has no tag 7.1.3, and no ref was given, so there is nothing to merge: nothing was changed. Push the tag, or do a dry run with the input ref (a branch or a commit of ${commercial}, for example release/7.1.3)`,
+    );
+  });
+
+  it("fails if the ref does not exist", async () => {
+    await expect(
+      run("7.1.3", before("7.1.3"), { ref: "release/7.1.4", dryRun: true }),
+    ).rejects.toThrow(`${commercial} has no branch or commit "release/7.1.4"`);
+  });
+
+  it("fails if the tag exists too, and does not look at the ref", async () => {
+    const octokit = everything({
+      commercialRefs: { "release/7.1.3": SHA },
+    });
+    await expect(
+      run("7.1.3", octokit, { ref: "release/7.1.3", dryRun: true }),
+    ).rejects.toThrow(`${oss} already has the tag 7.1.3`);
+  });
+
+  it("is a plain dry run when the ref is the tag itself", async () => {
+    for (const ref of ["7.1.3", "refs/tags/7.1.3"]) {
+      const { plan: result } = await run("7.1.3", everything(), {
+        ref,
+        dryRun: true,
+      });
+      expect(result.ref).toBeNull();
+      expect(result.merge.ref).toBeNull();
+    }
+  });
+
+  it("is a plain real run when the ref is the tag itself", async () => {
+    const { plan: result } = await run("7.1.3", everything(), {
+      ref: "7.1.3",
+      dryRun: false,
+    });
+    expect(result.ref).toBeNull();
+  });
+
+  it("is not used by a hotfix, which says so", async () => {
+    const { plan: result, notices } = await run("7.0.9.1", everything(), {
+      ref: "release/7.0.9.1",
+      dryRun: true,
+    });
+    expect(result.ref).toBeNull();
+    expect(notices.map((n) => n.title)).toContain("Ref not used");
+  });
+
+  it("is in the summary", async () => {
+    const { plan: result } = await run("7.1.3", before("7.1.3"), {
+      ref: "release/7.1.3",
+      dryRun: true,
+    });
+    const text = summaryOf(result, true);
+    expect(text).toContain(
+      `Dry run before the tag: \`release/7.1.3\` (fc6c496) of ${commercial} stands in for the tag \`7.1.3\`, which does not exist yet.`,
+    );
+    expect(text).toContain(
+      "The ref `release/7.1.3` is merged into `7.1.x`, and forward:",
+    );
+  });
+});
+
 describe("a hotfix", () => {
   it("is not merged, and not copied, and says so as information", async () => {
     const { plan: result, notices } = await run("7.0.9.1");
@@ -290,6 +428,7 @@ describe("a long-term support release", () => {
     expect(result.merge).toEqual({
       kind: "lts",
       tagRepository: commercial,
+      ref: null,
       branches: [
         { generation: "5.8.x", branch: "embargoed/lts/5.8.x" },
         { generation: "6.4.x", branch: "embargoed/lts/6.4.x" },

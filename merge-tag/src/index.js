@@ -222,7 +222,10 @@ class Merger {
   }
 }
 
-/** Fetches what the merges read: the OSS branches of the chain and the tag of the release. */
+/**
+ * Fetches what the merges read: the OSS branches of the chain and, unless a ref stands in for
+ * it (a dry run before the tag exists, which is not in OSS), the tag of the release.
+ */
 function fetchOss({ directory, plan, ossRemote, ossUrl }) {
   const remotes = git(directory, "remote").split("\n");
   if (remotes.includes(ossRemote)) {
@@ -239,8 +242,36 @@ function fetchOss({ directory, plan, ossRemote, ossUrl }) {
     ...plan.merge.branches.map(
       (b) => `+refs/heads/${b.branch}:refs/remotes/${ossRemote}/${b.branch}`,
     ),
-    `+refs/tags/${plan.tag}:${TAG_REF}`,
+    ...(plan.merge.ref ? [] : [`+refs/tags/${plan.tag}:${TAG_REF}`]),
   );
+}
+
+/**
+ * The commit that the plan recorded for the ref, from the commercial repository, in the ref of
+ * the tag: the merges read it as they read the tag. The commit is fetched by its name if the
+ * clone does not have it, so a branch that moved since the plan changes nothing.
+ */
+function fetchCommercialRef({ directory, plan, commercialRemote }) {
+  const { sha } = plan.merge.ref;
+  const local = gitTry(
+    directory,
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `${sha}^{commit}`,
+  );
+  if (local.code !== 0) {
+    git(
+      directory,
+      "fetch",
+      "--quiet",
+      "--no-tags",
+      commercialRemote,
+      `+${sha}:${TAG_REF}`,
+    );
+    return;
+  }
+  git(directory, "update-ref", TAG_REF, local.stdout);
 }
 
 function fetchCommercialTag({ directory, plan, commercialRemote }) {
@@ -281,6 +312,10 @@ function fetchCommercialTag({ directory, plan, commercialRemote }) {
  * branch), of the target (across) or of the source (down), where the two sides conflict. A
  * branch that has the source in its history already is not merged, so a run can be repeated.
  *
+ * A dry run before the tag exists gives `plan.merge.ref` (a name and the commit that the plan
+ * found): that commit, from the commercial repository for both kinds, is merged where the tag
+ * would be, with the message of the tag, and nothing of OSS is read for the tag.
+ *
  * It returns what was done, for the summary and for the push: the work refs of the branches
  * before and after, the merges, and the commits that were created in each repository.
  */
@@ -309,7 +344,10 @@ export function mergeTag({
   }
   if (kind === "oss") {
     fetchOss({ directory, plan, ossRemote, ossUrl });
-  } else {
+  }
+  if (plan.merge.ref) {
+    fetchCommercialRef({ directory, plan, commercialRemote });
+  } else if (kind !== "oss") {
     fetchCommercialTag({ directory, plan, commercialRemote });
   }
   const tagCommit = git(directory, "rev-parse", `${TAG_REF}^{commit}`);
@@ -461,6 +499,7 @@ export function mergeTag({
     kind,
     tag: plan.tag,
     tagCommit,
+    ref: plan.merge.ref ?? null,
     branches: branches.map((b) => ({
       ...b,
       after: after(b),
@@ -485,7 +524,11 @@ export function summaryOf(plan, result, dryRun) {
     i + 1,
     m.repository === "oss" ? "OSS" : "commercial",
     `\`${m.into}\``,
-    m.kind === "tag" ? `tag \`${m.source}\`` : `\`${m.source}\` (${m.kind})`,
+    m.kind === "tag"
+      ? result.ref
+        ? `ref \`${result.ref.name}\` (stands in for the tag)`
+        : `tag \`${m.source}\``
+      : `\`${m.source}\` (${m.kind})`,
     `\`${m.message}\``,
     m.outcome === "merged"
       ? (m.catalog ?? [])

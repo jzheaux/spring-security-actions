@@ -53,6 +53,28 @@ const tagExists = (octokit, repository, tag) =>
     }),
   );
 
+/**
+ * The commit of a branch or commit of a repository, or undefined if it has none. GitHub says
+ * 404 for a name it does not know, and 422 for a commit that is not one.
+ */
+async function resolveRef(octokit, repository, ref) {
+  try {
+    const response = await call(
+      `Looking for the ref ${ref} of ${repository}`,
+      octokit.rest.repos.getCommit({
+        ...parseRepository(repository),
+        ref,
+      }),
+    );
+    return response.data.sha;
+  } catch (error) {
+    if (/failed with (404|422) /.test(error.message)) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 /** The `version=` of the gradle.properties of a branch, or undefined if it has none. */
 async function branchVersion(octokit, repository, branch) {
   let response;
@@ -150,6 +172,10 @@ export async function resolveChain(
  * - The merges (none for a hotfix, which never comes back into the branches of its generation):
  *   the tag has to exist, in OSS for oss and in the commercial repository for lts, and the
  *   chain of branches is worked out (each OSS one needs its frozen and active branch).
+ * - A dry run before the tag exists: `ref`, a branch or a commit of the commercial repository,
+ *   stands in for the tag (release/7.1.3 for 7.1.3). It is only for a dry run, and only while
+ *   the tag does not exist: with the tag, the run fails, unless the ref is the tag itself,
+ *   which is a plain dry run. The tag stays the name of the release for everything else.
  *
  * It returns { plan, notices }, the notices being what is to be logged: { level, title, message }.
  */
@@ -163,11 +189,22 @@ export async function plan(
     commercialRepository,
     project,
     apiUrl,
+    ref: refInput = "",
+    dryRun = false,
     today = new Date().toISOString().slice(0, 10),
   },
   { octokit, fetch },
 ) {
   const tag = releaseVersion;
+  // the tag itself as the ref is no ref: it is a dry run with the tag
+  const named = (refInput ?? "").trim().replace(/^refs\/tags\//, "");
+  const ref = named === tag ? "" : named;
+  if (ref && !dryRun) {
+    throw new TitledError(
+      "Ref only for a dry run",
+      `The input ref (${ref}) stands in for a tag that does not exist yet, and only a dry run may use it: a real run merges the tag ${tag}. Nothing was changed.`,
+    );
+  }
   const oss = await findMilestone(octokit, ossRepository, tag);
   const commercial = await findMilestone(octokit, commercialRepository, tag);
   const kind = oss ? "oss" : hotfix ? "hotfix" : "lts";
@@ -206,13 +243,37 @@ export async function plan(
   const snapshotBranch = `embargoed/${snapshotVersion}`;
 
   let merge = null;
+  let resolvedRef = null;
+  if (kind === "hotfix" && ref) {
+    notices.push({
+      level: "info",
+      title: "Ref not used",
+      message: `A hotfix is not merged, so the ref ${ref} is not used`,
+    });
+  }
   if (kind !== "hotfix") {
     const repository = kind === "oss" ? ossRepository : commercialRepository;
     const problems = [];
-    if (!(await tagExists(octokit, repository, tag))) {
+    const hasTag = await tagExists(octokit, repository, tag);
+    if (ref) {
+      if (hasTag) {
+        throw new TitledError(
+          "Tag exists",
+          `${repository} already has the tag ${tag}, so the ref ${ref} stands in for nothing: leave ref empty to dry run with the tag, or give the tag itself (${tag}) as the ref. Nothing was changed.`,
+        );
+      }
+      const sha = await resolveRef(octokit, commercialRepository, ref);
+      if (!sha) {
+        throw new TitledError(
+          "Ref not found",
+          `${commercialRepository} has no branch or commit "${ref}", and ${repository} has no tag ${tag}, so there is nothing to merge: nothing was changed`,
+        );
+      }
+      resolvedRef = { name: ref, sha };
+    } else if (!hasTag) {
       throw new TitledError(
         "Tag not found",
-        `${repository} has no tag ${tag}, so there is nothing to merge: nothing was changed`,
+        `${repository} has no tag ${tag}, and no ref was given, so there is nothing to merge: nothing was changed. Push the tag, or do a dry run with the input ref (a branch or a commit of ${commercialRepository}, for example release/${tag}).`,
       );
     }
     const generations = await readGenerations({ apiUrl, project }, { fetch });
@@ -264,6 +325,7 @@ export async function plan(
     merge = {
       kind,
       tagRepository: repository,
+      ref: resolvedRef,
       branches,
     };
   }
@@ -285,6 +347,7 @@ export async function plan(
       releaseBranch,
       snapshotBranch,
       deleteBranches: [releaseBranch, snapshotBranch],
+      ref: resolvedRef,
       merge,
     },
     notices,
@@ -305,6 +368,11 @@ export function summaryOf(plan, dryRun) {
     `${KINDS[plan.kind]}: ${plan.copyReason}.`,
     `Branches to delete: ${plan.deleteBranches.map((b) => `\`${b}\``).join(", ")}`,
   ];
+  if (plan.ref) {
+    lines.push(
+      `Dry run before the tag: \`${plan.ref.name}\` (${plan.ref.sha.slice(0, 7)}) of ${plan.commercialRepository} stands in for the tag \`${plan.tag}\`, which does not exist yet.`,
+    );
+  }
   if (plan.merge) {
     const rows = plan.merge.branches.map((b) => [
       `\`${b.branch}\``,
@@ -312,7 +380,9 @@ export function summaryOf(plan, dryRun) {
     ]);
     lines.push(
       "",
-      `The tag \`${plan.tag}\` of ${plan.merge.tagRepository} is merged into \`${plan.merge.branches[0].branch}\`, and forward:`,
+      plan.ref
+        ? `The ref \`${plan.ref.name}\` is merged into \`${plan.merge.branches[0].branch}\`, and forward:`
+        : `The tag \`${plan.tag}\` of ${plan.merge.tagRepository} is merged into \`${plan.merge.branches[0].branch}\`, and forward:`,
       "",
       table(["Branch", "Frozen and active"], rows),
     );
@@ -340,6 +410,8 @@ export async function main() {
       }),
       project: core.getInput("project", { required: true }),
       apiUrl: core.getInput("api-url"),
+      ref: core.getInput("ref"),
+      dryRun,
     },
     { octokit, fetch },
   );

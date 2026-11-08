@@ -266,6 +266,60 @@ describe("nothing commercial reaches OSS", () => {
   });
 });
 
+// A dry run before the tag exists: the commit of release/7.0.9 of the commercial repository
+// stands in for the tag, and OSS has no such tag.
+describe("a ref in place of the tag", () => {
+  const refOf = (f) => {
+    git(f.oss, "tag", "-d", "7.0.9");
+    return {
+      name: "release/7.0.9",
+      sha: git(f.work, "rev-parse", "origin/release/7.0.9"),
+    };
+  };
+
+  it("treats the commits of the ref as public, and says that it is simulated", () => {
+    const f = createFixture({ fresh: true });
+    const ref = refOf(f);
+    const merge = simulateMerges(f, { ref });
+    // only the commercial repository has these commits
+    expect(
+      Number(
+        git(f.work, "rev-list", "--count", ref.sha, "--not", "--remotes=oss"),
+      ),
+    ).toBeGreaterThan(0);
+    const result = push(f, merge, "check");
+    expect(result.leakCheck).toEqual({ problems: [], commits: 1 });
+    expect(result.simulated).toEqual(ref);
+    const text = summaryOf(result);
+    expect(text).toContain(
+      `Simulated: the tag does not exist yet, so the commits of \`release/7.0.9\` (${ref.sha.slice(0, 7)}) were treated as public.`,
+    );
+  });
+
+  it("still rejects any other commit that only the commercial repository has", () => {
+    const f = createFixture({ fresh: true });
+    const merge = simulateMerges(f, { ref: refOf(f), leak: "commercial" });
+    expect(() => push(f, merge, "check")).toThrow(
+      "is in the commercial repository",
+    );
+  });
+
+  it("is never pushed", () => {
+    const f = createFixture({ fresh: true });
+    const merge = simulateMerges(f, { ref: refOf(f) });
+    const before = where(f);
+    expect(() => push(f, merge, "push")).toThrow("only a dry run may use it");
+    expect(where(f)).toEqual(before);
+  });
+
+  it("says nothing of it for a tag", () => {
+    const f = createFixture();
+    const result = push(f, simulateMerges(f), "check");
+    expect(result.simulated).toBeNull();
+    expect(summaryOf(result)).not.toContain("Simulated");
+  });
+});
+
 describe("the summary", () => {
   it("says what would be pushed, OSS first, and what the tripwire looked at", () => {
     const f = createFixture();

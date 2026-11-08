@@ -25,6 +25,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`ensure-cve-issues`](ensure-cve-issues/README.md) | A closed issue for every CVE fix of a push, in the milestone of its release. It makes the ones that are missing. |
 | [`ensure-dependency-issues`](ensure-dependency-issues/README.md) | An issue for every dependency update, in a milestone. It makes the ones that are missing. |
 | [`ensure-milestone`](ensure-milestone/README.md) | Creates a milestone in a repository if it has none of that title, with no due date. |
+| [`export-merges`](export-merges/README.md) | Exports the branches that `merge-tag` made, in a clone of their own with a README, to look at in a dry run (it has no remote and no command that pushes). |
 | [`freeze-summary`](freeze-summary/README.md) | Writes the summary of a code freeze. |
 | [`git-identity`](git-identity/README.md) | Sets who commits: `github-actions[bot]` by default. |
 | [`join-train`](join-train/README.md) | Joins a release to the release train, by running the workflow Release Train - Join of the project on the release branch. |
@@ -35,7 +36,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 | [`merge-tag`](merge-tag/README.md) | Merges the tag of a release that was made public into its branch and forward through the newer branches, locally, keeping the versions of every branch. |
 | [`name-repositories`](name-repositories/README.md) | The project and its OSS repository, from the commercial repository. |
 | [`plan-freeze`](plan-freeze/README.md) | Plans a code freeze: the next versions, the releases to mark ready, and everything that stops it. |
-| [`plan-post-publish`](plan-post-publish/README.md) | Plans what happens after a release is made public: its kind, whether its issues are copied, the merges of its tag and the branches to delete. |
+| [`plan-post-publish`](plan-post-publish/README.md) | Plans what happens after a release is made public: its kind, whether its issues are copied, the merges of its tag (or, in a dry run before the tag exists, of a ref that stands in for it) and the branches to delete. |
 | [`plan-release-branches`](plan-release-branches/README.md) | What the push of an embargoed branch builds. |
 | [`push-branches`](push-branches/README.md) | Pushes branches at once or none, and summarizes them. |
 | [`push-freeze`](push-freeze/README.md) | Checks that no commercial code goes to OSS, and pushes the branches of a code freeze, atomically and without force. |
@@ -49,7 +50,7 @@ They are written in JavaScript (Node 24), and every one of them is **self contai
 
 [`release-branches.yml`](.github/workflows/release-branches.yml) is a reusable workflow that builds `release/<version>` and the snapshot branches on a push to an embargoed branch, with the actions above and nothing else (every step is an action). [docs/release-branches.md](docs/release-branches.md) is the guide: what it builds, how to call it, the secret and the tokens it needs, and what to do when it fails.
 
-[`post-publish.yml`](.github/workflows/post-publish.yml) is a reusable workflow for what follows once a release is public: it copies the issues of its milestone to OSS, merges its tag forward, and deletes the branches that were built for the release. It is run when the tag is pushed, or by hand, with a dry run. [docs/post-publish.md](docs/post-publish.md) is the guide: the callers, the token, and what to do when it fails.
+[`post-publish.yml`](.github/workflows/post-publish.yml) is a reusable workflow for what follows once a release is public: it copies the issues of its milestone to OSS, merges its tag forward, and deletes the branches that were built for the release. It is run when the tag is pushed, or by hand, with a dry run (which can be made before the tag exists, with a ref in its place, and which attaches the merged branches to the run). [docs/post-publish.md](docs/post-publish.md) is the guide: the callers, the token, and what to do when it fails.
 
 [`ensure-cve-issues.yml`](.github/workflows/ensure-cve-issues.yml) is a reusable workflow for a push to an active branch: it makes a closed issue for every `Fixes CVE-ID` that the push has, in the milestone of the release. [docs/cve-issues.md](docs/cve-issues.md) is the guide, with the caller.
 
