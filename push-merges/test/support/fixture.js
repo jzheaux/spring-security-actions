@@ -331,7 +331,7 @@ export function ltsPlan(tag, generations) {
  * it: "commit" (a commit that merge-tag did not make), "message" (a merge that names an embargoed
  * branch) or "commercial" (a merge of a commit that only the commercial repository has).
  */
-export function simulateMerges(f, { leak, kind = "oss" } = {}) {
+export function simulateMerges(f, { leak, kind = "oss", ref } = {}) {
   const w = f.work;
   const oss = "refs/post-publish/oss/7.0.x";
   const frozen = "refs/post-publish/commercial/embargoed/frozen/7.0.x";
@@ -351,13 +351,14 @@ export function simulateMerges(f, { leak, kind = "oss" } = {}) {
     "oss",
     "+refs/heads/7.0.x:refs/remotes/oss/7.0.x",
     "+refs/heads/7.1.x:refs/remotes/oss/7.1.x",
-    "+refs/tags/7.0.9:refs/post-publish/tag",
+    // a ref stands in for the tag when the tag does not exist: it is not read from OSS
+    ...(ref ? [] : ["+refs/tags/7.0.9:refs/post-publish/tag"]),
   );
   git(
     w,
     "update-ref",
     "refs/post-publish/tag",
-    rev("refs/post-publish/tag^{commit}"),
+    ref ? ref.sha : rev("refs/post-publish/tag^{commit}"),
   );
   git(w, "update-ref", oss, "refs/remotes/oss/7.0.x");
   git(w, "update-ref", frozen, "refs/remotes/origin/embargoed/frozen/7.0.x");
@@ -394,6 +395,7 @@ export function simulateMerges(f, { leak, kind = "oss" } = {}) {
   return {
     kind,
     tag: "7.0.9",
+    ref: ref ?? null,
     branches: [
       {
         repository: "oss",

@@ -2,7 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { catalogVersions, mergeTag, summaryOf } from "../src/index.js";
-import { createFixture, git, ltsPlan, ossPlan } from "./support/fixture.js";
+import {
+  commitFiles,
+  createFixture,
+  git,
+  ltsPlan,
+  ossPlan,
+} from "./support/fixture.js";
 import { runAction } from "./support/run-action.js";
 
 const ossUrl = (f) => f.oss;
@@ -323,6 +329,75 @@ describe("a hotfix", () => {
       created: { oss: [], commercial: [] },
     });
     expect(git(f.work, "for-each-ref")).toBe(before);
+  });
+});
+
+// A dry run before the tag exists: the tag is not in the OSS repository, and not in the
+// commercial one either, and the commit of release/<version> stands in for it.
+describe("a ref in place of the tag", () => {
+  const withRef = (plan, name, sha) => ({
+    ...plan,
+    ref: { name, sha },
+    merge: { ...plan.merge, ref: { name, sha } },
+  });
+  const shaOf = (f, branch) => git(f.work, "rev-parse", `origin/${branch}`);
+
+  it("merges the commit of the ref as the tag of an OSS release, from the commercial repository only", () => {
+    const g = createFixture({ fresh: true });
+    git(g.oss, "tag", "-d", "7.0.9");
+    const sha = shaOf(g, "release/7.0.9");
+    const merged = run(
+      g,
+      withRef(ossPlan("7.0.9", OSS_CHAIN), "release/7.0.9", sha),
+    );
+    expect(merged.ref).toEqual({ name: "release/7.0.9", sha });
+    expect(merged.tagCommit).toBe(sha);
+    expect(merged.merges[0]).toMatchObject({
+      kind: "tag",
+      into: "7.0.x",
+      message: "Merge tag '7.0.9' into 7.0.x",
+      outcome: "merged",
+    });
+    expect(at(g, merged, "7.0.x", "src/Fixed.txt")).toContain("the fix");
+    expect(versionAt(g, merged, "7.0.x")).toBe("7.0.9-SNAPSHOT");
+  });
+
+  it("merges it as the tag of a long-term support release", () => {
+    const g = createFixture({ fresh: true });
+    git(g.commercial, "tag", "-d", "5.8.30");
+    const sha = shaOf(g, "release/5.8.30");
+    const merged = run(
+      g,
+      withRef(ltsPlan("5.8.30", ["5.8.x", "6.4.x"]), "release/5.8.30", sha),
+    );
+    expect(merged.merges[0].message).toBe("Merge tag '5.8.30' into 5.8.x");
+    expect(at(g, merged, "embargoed/lts/6.4.x", "src/Fixed.txt")).toContain(
+      "the fix of 5.8",
+    );
+  });
+
+  it("fetches the commit from the commercial repository if the clone does not have it", () => {
+    const g = createFixture({ fresh: true });
+    git(g.seed, "switch", "-q", "release/5.8.30");
+    const sha = commitFiles(g.seed, { "src/More.txt": "more\n" }, "More");
+    git(g.seed, "push", "-q", "commercial", "release/5.8.30");
+    git(g.commercial, "tag", "-d", "5.8.30");
+    expect(() => git(g.work, "cat-file", "-e", sha)).toThrow();
+    const merged = run(
+      g,
+      withRef(ltsPlan("5.8.30", ["5.8.x"]), "release/5.8.30", sha),
+    );
+    expect(merged.tagCommit).toBe(sha);
+    expect(at(g, merged, "embargoed/lts/5.8.x", "src/More.txt")).toBe("more");
+  });
+
+  it("is in the summary, in place of the tag", () => {
+    const g = createFixture({ fresh: true });
+    const sha = shaOf(g, "release/5.8.30");
+    const plan = withRef(ltsPlan("5.8.30", ["5.8.x"]), "release/5.8.30", sha);
+    const text = summaryOf(plan, run(g, plan), true);
+    expect(text).toContain("ref `release/5.8.30` (stands in for the tag)");
+    expect(text).toContain("`Merge tag '5.8.30' into 5.8.x`");
   });
 });
 

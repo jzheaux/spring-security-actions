@@ -19,8 +19,9 @@ The tag is the release version: `7.1.3`, and not `v7.1.3`. The work is always do
 | 2 | **Back up** (`backup-branches`), and attach the backup to the run. | a clone with the branches to delete | same |
 | 3 | **Copy** the issues (`copy-milestone-issues`), for an OSS release whose milestone is in both repositories. | copies | lists |
 | 4 | **Merge** (`merge-tag`), not for a hotfix. | merges in a clone of the runner | same |
-| 5 | **Check, and push** (`push-merges`). | the check, then OSS, then the commercial repository | the check only (`git push --atomic --dry-run`) |
-| 6 | **Delete** the branches (`delete-branches`). | one atomic push | lists |
+| 5 | **Export** the merged branches (`export-merges`), and attach them to the run. | not done | a clone with the merged branches, to look at |
+| 6 | **Check, and push** (`push-merges`). | the check, then OSS, then the commercial repository | the check only (`git push --atomic --dry-run`) |
+| 7 | **Delete** the branches (`delete-branches`). | one atomic push | lists |
 
 A step that fails stops the run, so a branch is never deleted while a copy or a merge failed. A copy that is skipped (see below) does not stop it. Every step can be run again: the copy skips what has the comment with the link to its copy, a branch that has the tag is not merged again, and a branch that is gone is not deleted twice.
 
@@ -54,6 +55,26 @@ git push git@github.com:spring-projects/spring-security-commercial.git fc6c49669
 
 Download it, unzip it, and run the commands from inside. It has no credentials. It is kept for the default retention of artifacts, and whoever can read the commercial repository can download it. A dry run attaches it too.
 
+### The merged branches of a dry run
+
+A dry run merges in a clone of the runner, which is gone when the run ends, so it attaches the result too: the artifact `merged-branches-7.1.3`, a repository with only the merged branches, each named as in its repository (`7.1.x`, `embargoed/active/main`), and a `README.md` with the commits and the commit before each merge. The summary has the same table:
+
+```
+git log --graph --oneline main
+git diff 8e7d6c5 main
+```
+
+It is **for looking only**: it has no remote and no command that pushes, as in a dry run before the tag exists its OSS branches have commercial commits. It is attached before the check, so it is there when the check fails. Whoever can read the commercial repository can download it.
+
+### A dry run before the tag exists
+
+The tag is pushed when the release is made public, and a dry run is most useful before that. The input `ref`, a branch or a commit of the **commercial** repository (`release/7.1.3`), stands in for the tag:
+
+- The tag stays the name of the release: the kind, the milestones, the snapshot branch, the branches to delete, the artifacts and the messages of the merges (`Merge tag '7.1.3' into 7.1.x`) are the ones of the tag. The version is never worked out from a real tag.
+- The plan records the commit of the ref, and that commit is merged, from the commercial repository for an OSS release and for a long-term support one.
+- **Only a dry run may use it, and only while the tag does not exist.** A real run, or a tag that is pushed, always uses the tag, so a branch is never merged forward by mistake. A dry run fails if the tag exists too, unless the ref is the tag itself (`7.1.3`), which is a dry run with the tag.
+- **The check of OSS is simulated.** Until the tag is public, the commits of the ref only exist in the commercial repository, so the check that nothing commercial reaches OSS would always stop. It treats the commits of the ref as public, and the summary says so: "Simulated: the tag does not exist yet". Any other commit that only the commercial repository has is still rejected.
+
 ## The callers
 
 A tag event is real, and a run by hand is a dry run unless it is unticked. A tag that is pushed runs the file of the commit that it points to, so the caller must be in the history of the tagged commit.
@@ -71,6 +92,10 @@ run-name: "${{ inputs.tag || github.ref_name }}: Post Publish${{ github.event_na
         description: "The tag, which is the version of the release, for example 7.1.3"
         required: true
         type: string
+      ref:
+        description: "Dry run only, before the tag exists: a branch or a commit of the commercial repository that stands in for the tag, for example release/7.1.3"
+        required: false
+        type: string
       dry-run:
         description: "Only say what would be done: nothing is copied, pushed or deleted"
         default: true
@@ -82,6 +107,7 @@ jobs:
     uses: spring-io/spring-security-actions/.github/workflows/post-publish.yml@<the commit of a tag>
     with:
       tag: ${{ inputs.tag || github.ref_name }}
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || '' }}
       dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
       runs-on: ${{ vars.UBUNTU_RUNS_ON }}
     secrets:
@@ -103,12 +129,15 @@ Both repositories must let the token push to their protected branches (a bypass 
 
 ## Reading a run
 
-The summary has the plan, the back-up, the copy, the merges with what each changed in the version catalog, the pushes, and the branches.
+The summary has the plan, the back-up, the copy, the merges with what each changed in the version catalog, the merged branches (a dry run), the pushes, and the branches.
 
 | What the run says | What to do |
 |---|---|
 | `... is not a tag of a version` | The tag is the release version, `7.1.3`, and not `v7.1.3`. |
-| **Tag not found** | The tag is in the OSS repository for an OSS release, and in the commercial one for a long-term support release. |
+| **Tag not found** | The tag is in the OSS repository for an OSS release, and in the commercial one for a long-term support release. Push it, or do a dry run with the input `ref` (`release/7.1.3`). |
+| **Ref not found** | The commercial repository has no branch or commit of that name. |
+| **Ref only for a dry run** | `ref` stands in for a tag that does not exist yet, so a real run cannot have it. Untick the ref, or tick the dry run. Nothing was changed. |
+| **Tag exists** | A dry run has a `ref`, and the tag exists. Leave `ref` empty, or give the tag itself as the ref. |
 | **No branch for the tag** | No generation of the Spring projects API has the tag, and no candidate has a version of it in `gradle.properties`. Look at the generations, or merge by hand. |
 | **Branches missing** | A frozen, active or long-term support branch of the chain does not exist. Create it, or merge by hand. |
 | **No commercial milestone**, **No milestone** (warnings) | The issues were not copied. Create the milestone and run it again if they should be. |
