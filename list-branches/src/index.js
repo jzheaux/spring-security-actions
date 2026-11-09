@@ -6,7 +6,7 @@ const DEFAULT_API_URL = "https://api.spring.io";
 /**
  * The generations of a project from the Spring projects API
  * (GET <api>/projects/<project>/generations, a HAL list in _embedded.generations, each
- * with name, ossSupportEndDate and commercialSupportEndDate as YYYY-MM-DD or null).
+ * with name, initialReleaseDate, ossSupportEndDate and commercialSupportEndDate as YYYY-MM-DD or null).
  */
 export async function readGenerations({ apiUrl, project }, { fetch }) {
   const url = `${apiUrl.replace(/\/$/, "")}/projects/${encodeURIComponent(project)}/generations`;
@@ -33,22 +33,24 @@ export async function readGenerations({ apiUrl, project }, { fetch }) {
   return generations;
 }
 
-/** [major, minor] of a generation, 7.1.x gives [7, 1]. */
-function numbersOf(generation) {
-  const match = /^(\d+)\.(\d+)\.x$/.exec(generation);
-  if (!match) {
+const initialReleaseOf = (name, date) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? "")) {
     throw new Error(
-      `"${generation}" is not a generation: expected <major>.<minor>.x`,
+      `The generation ${name} has no initialReleaseDate (YYYY-MM-DD) in the Spring projects API, which is the order of the generations`,
     );
   }
-  return [Number(match[1]), Number(match[2])];
-}
-
-const byGeneration = (a, b) => {
-  const [majorA, minorA] = numbersOf(a.generation);
-  const [majorB, minorB] = numbersOf(b.generation);
-  return majorA - majorB || minorA - minorB;
+  return date;
 };
+
+/**
+ * Oldest first: by the date of the initial release, and then by name. The names cannot be
+ * compared by their numbers: Spring Session calls a generation 2021.2.x, which is older than
+ * 3.4.x and 4.2.x. The end of the OSS support is no order either, as generations tie on it
+ * (Spring Security's 5.8.x and 6.0.x).
+ */
+const byRelease = (a, b) =>
+  a.initialRelease.localeCompare(b.initialRelease) ||
+  a.generation.localeCompare(b.generation);
 
 /**
  * What `spring-versions` shows, in the order of the generations (oldest first). A generation
@@ -62,6 +64,7 @@ export function listGenerations(generations, today) {
   const supported = generations
     .map((g) => ({
       generation: g.name,
+      initialReleaseDate: g.initialReleaseDate,
       ossSupportEnd: g.ossSupportEndDate ?? null,
       commercialSupportEnd: g.commercialSupportEndDate ?? null,
     }))
@@ -70,12 +73,13 @@ export function listGenerations(generations, today) {
     )
     .map((g) => ({
       ...g,
+      initialRelease: initialReleaseOf(g.generation, g.initialReleaseDate),
       type:
         g.ossSupportEnd !== null && g.ossSupportEnd >= today
           ? "OSS"
           : "COMMERCIAL",
     }))
-    .sort(byGeneration);
+    .sort(byRelease);
   const newestOss = supported.filter((g) => g.type === "OSS").at(-1);
   return supported.map(({ type, generation }) => ({
     type,

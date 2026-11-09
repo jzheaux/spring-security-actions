@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { describeProblems, planFreeze } from "../src/index.js";
-import { createFixture, git, trainWith } from "./support/freeze-fixture.js";
+import {
+  commitFile,
+  createFixture,
+  git,
+  trainWith,
+} from "./support/freeze-fixture.js";
 
 const due = "2026-11-19T00:00:00Z";
 let numbers = 0;
@@ -377,5 +382,95 @@ describe("planFreeze", () => {
         /is the repository that runs the freeze/,
       );
     });
+  });
+});
+
+// Spring Session: the generation 2021.2.x of the API is the branch embargoed/lts/2.7.x, at
+// 2021.2.9-SNAPSHOT, and the other long-term support generations are named after their branch.
+describe("a long-term support generation whose name is not the name of its branch", () => {
+  /** The fixture, with embargoed/lts/2.7.x (and its release) in the commercial repository. */
+  function sessionSetup(inputs = {}, extraBranches = {}) {
+    const { fixture, run } = setup(
+      {},
+      { ltsGenerations: ["2021.2.x", "6.5.x"], ...inputs },
+      {
+        commercial: [...commercialMilestones, milestone("2021.2.9")],
+      },
+    );
+    const { seed, commercial, work } = fixture;
+    const publish = (name, from, version, message) => {
+      git(seed, "switch", "-q", "-c", name, from);
+      commitFile(seed, "gradle.properties", `version=${version}\n`, message);
+      git(seed, "push", "-q", "commercial", `${name}:refs/heads/${name}`);
+    };
+    publish(
+      "embargoed/lts/2.7.x",
+      fixture.initial,
+      "2021.2.9-SNAPSHOT",
+      "Set up 2.7.x",
+    );
+    publish(
+      "release/2021.2.9",
+      "embargoed/lts/2.7.x",
+      "2021.2.9",
+      "Release 2021.2.9",
+    );
+    for (const [name, version] of Object.entries(extraBranches)) {
+      publish(name, fixture.initial, version, `Set up ${name}`);
+    }
+    git(work, "fetch", "-q", "origin");
+    return { fixture, run, commercial };
+  }
+  const trainOf = () => train({ "2021.2.9": joined });
+
+  it("plans the branch that has the version of the generation, and the release built from it", async () => {
+    const { run } = sessionSetup({ trainDocument: trainOf() });
+    const plan = await run();
+    expect(plan.problems).toEqual([]);
+    expect(plan.lts[0]).toEqual({
+      generation: "2021.2.x",
+      branch: "embargoed/lts/2.7.x",
+      current: "2021.2.9-SNAPSHOT",
+      next: "2021.2.10-SNAPSHOT",
+      bump: true,
+    });
+    expect(plan.lts.map((g) => g.branch)).toEqual([
+      "embargoed/lts/2.7.x",
+      "embargoed/lts/6.5.x",
+    ]);
+    const release = plan.releases.find((r) => r.version === "2021.2.9");
+    expect(release.builtFrom).toBe("embargoed/lts/2.7.x");
+  });
+
+  it("prefers the branch that is named after the generation", async () => {
+    const { run } = sessionSetup(
+      { trainDocument: trainOf() },
+      { "embargoed/lts/2021.2.x": "2021.2.9-SNAPSHOT" },
+    );
+    const plan = await run();
+    expect(plan.lts[0].branch).toBe("embargoed/lts/2021.2.x");
+  });
+
+  it("says that more than one branch has the version, and names them", async () => {
+    const { run } = sessionSetup(
+      { trainDocument: trainOf() },
+      { "embargoed/lts/2.6.x": "2021.2.5-SNAPSHOT" },
+    );
+    const plan = await run();
+    expect(plan.problems).toEqual(
+      expect.arrayContaining([
+        "2021.2.x could be the branch embargoed/lts/2.6.x (2021.2.5-SNAPSHOT) or embargoed/lts/2.7.x (2021.2.9-SNAPSHOT) of the commercial repository: it needs one with a version of 2021.2",
+      ]),
+    );
+  });
+
+  it("says that the branch does not exist when no branch has the version", async () => {
+    const { run } = setup({}, { ltsGenerations: ["2021.2.x", "6.5.x"] });
+    const plan = await run();
+    expect(plan.problems).toEqual(
+      expect.arrayContaining([
+        "embargoed/lts/2021.2.x does not exist in the commercial repository",
+      ]),
+    );
   });
 });

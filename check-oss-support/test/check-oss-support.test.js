@@ -66,7 +66,7 @@ describe("run", () => {
     }
     expect(error.title).toBe("OSS support of 6.4.x ended");
     expect(error.message).toBe(
-      "OSS support of 6.4.x ended on 2025-12-31, before the disclosure date 2026-11-19 of embargoed/frozen/6.4.x: replace embargoed/frozen/6.4.x and embargoed/active/6.4.x with embargoed/lts/6.4.x, which is for the generations that are commercial.",
+      "OSS support of 6.4.x ended on 2025-12-31, before the disclosure date 2026-11-19 of embargoed/frozen/6.4.x: replace embargoed/frozen/6.4.x and embargoed/active/6.4.x with the embargoed/lts branch of the generation, which is for the generations that are commercial.",
     );
   });
 

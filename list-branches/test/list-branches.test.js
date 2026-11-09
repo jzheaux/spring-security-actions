@@ -16,31 +16,37 @@ const TODAY = "2026-11-19";
 const generations = [
   {
     name: "5.8.x",
+    initialReleaseDate: "2022-11-30",
     ossSupportEndDate: "2023-11-30",
     commercialSupportEndDate: "2026-06-30",
   },
   {
     name: "7.2.x",
+    initialReleaseDate: "2026-11-30",
     ossSupportEndDate: "2027-12-31",
     commercialSupportEndDate: "2028-12-31",
   },
   {
     name: "6.4.x",
+    initialReleaseDate: "2024-11-30",
     ossSupportEndDate: "2025-12-31",
     commercialSupportEndDate: "2026-12-31",
   },
   {
     name: "7.0.x",
+    initialReleaseDate: "2025-11-30",
     ossSupportEndDate: "2026-12-31",
     commercialSupportEndDate: "2027-12-31",
   },
   {
     name: "6.5.x",
+    initialReleaseDate: "2025-05-31",
     ossSupportEndDate: "2026-06-30",
     commercialSupportEndDate: "2032-06-30",
   },
   {
     name: "7.1.x",
+    initialReleaseDate: "2026-06-30",
     ossSupportEndDate: "2027-07-31",
     commercialSupportEndDate: "2028-07-31",
   },
@@ -62,16 +68,19 @@ describe("listGenerations", () => {
       [
         {
           name: "7.0.x",
+          initialReleaseDate: "2025-11-30",
           ossSupportEndDate: null,
           commercialSupportEndDate: "2027-01-01",
         },
         {
           name: "6.0.x",
+          initialReleaseDate: "2022-11-30",
           ossSupportEndDate: "2020-01-01",
           commercialSupportEndDate: "2026-11-18",
         },
         {
           name: "6.1.x",
+          initialReleaseDate: "2023-05-31",
           ossSupportEndDate: "2020-01-01",
           commercialSupportEndDate: null,
         },
@@ -88,6 +97,7 @@ describe("listGenerations", () => {
       [
         {
           name: "7.0.x",
+          initialReleaseDate: "2025-11-30",
           ossSupportEndDate: TODAY,
           commercialSupportEndDate: TODAY,
         },
@@ -97,6 +107,124 @@ describe("listGenerations", () => {
     expect(list).toEqual([
       { type: "OSS", generation: "7.0.x", branch: "main" },
     ]);
+  });
+});
+
+// What api.spring.io says for spring-session: 2021.2.x, 3.4.x and 3.5.x are commercial (long-term
+// support), 4.0.x and 4.1.x are OSS, and 4.2.x is the next one (its branch is main). 2021.2.x is
+// older than 3.4.x, though 2021 is more than 3, and 3.3.x and older have no support left.
+const session = [
+  {
+    name: "4.2.x",
+    initialReleaseDate: "2026-11-30",
+    ossSupportEndDate: "2027-12-31",
+    commercialSupportEndDate: "2028-12-31",
+  },
+  {
+    name: "2021.2.x",
+    initialReleaseDate: "2022-05-31",
+    ossSupportEndDate: "2023-06-30",
+    commercialSupportEndDate: "2029-06-30",
+  },
+  {
+    name: "3.5.x",
+    initialReleaseDate: "2025-05-31",
+    ossSupportEndDate: "2026-06-30",
+    commercialSupportEndDate: "2032-06-30",
+  },
+  {
+    name: "4.0.x",
+    initialReleaseDate: "2025-11-30",
+    ossSupportEndDate: "2026-12-31",
+    commercialSupportEndDate: "2027-12-31",
+  },
+  {
+    name: "3.3.x",
+    initialReleaseDate: "2024-05-31",
+    ossSupportEndDate: "2025-06-30",
+    commercialSupportEndDate: "2026-06-30",
+  },
+  {
+    name: "3.4.x",
+    initialReleaseDate: "2024-11-30",
+    ossSupportEndDate: "2025-12-31",
+    commercialSupportEndDate: "2026-12-31",
+  },
+  {
+    name: "4.1.x",
+    initialReleaseDate: "2026-06-30",
+    ossSupportEndDate: "2027-07-31",
+    commercialSupportEndDate: "2028-07-31",
+  },
+];
+
+describe("the generations of Spring Session, whose oldest long-term support one is 2021.2.x", () => {
+  it("are in the order of their release, and not of their numbers", () => {
+    expect(listGenerations(session, TODAY)).toEqual([
+      { type: "COMMERCIAL", generation: "2021.2.x", branch: "2021.2.x" },
+      { type: "COMMERCIAL", generation: "3.4.x", branch: "3.4.x" },
+      { type: "COMMERCIAL", generation: "3.5.x", branch: "3.5.x" },
+      { type: "OSS", generation: "4.0.x", branch: "4.0.x" },
+      { type: "OSS", generation: "4.1.x", branch: "4.1.x" },
+      { type: "OSS", generation: "4.2.x", branch: "main" },
+    ]);
+  });
+
+  it("are chosen as they come, and an override in the order of the release is accepted", () => {
+    const choose = (branches, ltsBranches) =>
+      chooseBranches({
+        generations: session,
+        today: TODAY,
+        branches,
+        ltsBranches,
+      });
+    expect(choose("", "")).toEqual({
+      oss: ["4.0.x", "4.1.x", "main"],
+      lts: ["2021.2.x", "3.4.x", "3.5.x"],
+    });
+    expect(choose("", "2021.2.x,3.4.x").lts).toEqual(["2021.2.x", "3.4.x"]);
+    expect(choose("", "3.4.x,3.5.x").lts).toEqual(["3.4.x", "3.5.x"]);
+  });
+
+  it("refuse an override in the order of the numbers, which would merge the wrong way", () => {
+    expect(() =>
+      chooseBranches({
+        generations: session,
+        today: TODAY,
+        branches: "",
+        ltsBranches: "3.4.x,3.5.x,2021.2.x",
+      }),
+    ).toThrow(/not in the order of the versions, oldest first/);
+  });
+
+  it("fail for a generation that has no initial release date, which is the order", () => {
+    expect(() =>
+      listGenerations(
+        [
+          {
+            name: "3.4.x",
+            ossSupportEndDate: "2025-12-31",
+            commercialSupportEndDate: "2026-12-31",
+          },
+        ],
+        TODAY,
+      ),
+    ).toThrow("The generation 3.4.x has no initialReleaseDate");
+  });
+
+  it("ignore a generation with no date when it has no support left", () => {
+    expect(
+      listGenerations(
+        [
+          {
+            name: "1.0.x",
+            ossSupportEndDate: "2010-01-01",
+            commercialSupportEndDate: "2011-01-01",
+          },
+        ],
+        TODAY,
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -176,6 +304,7 @@ describe("chooseBranches", () => {
       ...generations,
       {
         name: "6.6.x",
+        initialReleaseDate: "2025-08-31",
         ossSupportEndDate: "2026-06-30",
         commercialSupportEndDate: "2030-06-30",
       },

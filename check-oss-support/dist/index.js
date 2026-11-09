@@ -31675,7 +31675,8 @@ async function readGenerations({ apiUrl, project }, { fetch }) {
  * Fails if the OSS support of the generation of the version ends before the date. An
  * embargoed fix of a generation is disclosed on that date (the release is made public),
  * so a generation that is not OSS any more by then is not frozen and active branches: it
- * is commercial, and has one embargoed/lts/<generation> branch instead.
+ * is commercial, and has one embargoed/lts branch instead (embargoed/lts/<generation>, or the
+ * one with a version of that major and minor, as plan-freeze finds it).
  *
  * The end date is the last day of support, so a release on that day is fine. A generation
  * with no end date has no end. It returns { generation, ossSupportEnd }.
@@ -31697,10 +31698,9 @@ async function run(
   }
   const ossSupportEnd = found.ossSupportEndDate ?? "";
   if (ossSupportEnd && ossSupportEnd < date) {
-    const lts = `embargoed/lts/${generation}`;
     throw new TitledError(
       `OSS support of ${generation} ended`,
-      `OSS support of ${generation} ended on ${ossSupportEnd}, before the disclosure date ${date}${branch ? ` of ${branch}` : ""}: replace embargoed/frozen/${generation} and embargoed/active/${generation} with ${lts}, which is for the generations that are commercial.`,
+      `OSS support of ${generation} ended on ${ossSupportEnd}, before the disclosure date ${date}${branch ? ` of ${branch}` : ""}: replace embargoed/frozen/${generation} and embargoed/active/${generation} with the embargoed/lts branch of the generation, which is for the generations that are commercial.`,
     );
   }
   return { generation, ossSupportEnd };

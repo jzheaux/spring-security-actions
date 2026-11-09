@@ -36816,6 +36816,64 @@ function addOssRemote({ directory, remote, url }) {
   );
 }
 
+/** "7.1" of 7.1.3-SNAPSHOT, 7.1.x and 2021.2.9-SNAPSHOT. Undefined if there is no such start. */
+const majorMinor = (version) => /^(\d+\.\d+)[.-]/.exec(`${version}-`)?.[1];
+
+/**
+ * The commercial branch of each long-term support generation, as the clone has them. It is
+ * embargoed/lts/<generation> if the repository has it, and else the one embargoed/lts/* branch
+ * that no generation is named after, whose gradle.properties has a version of the major and
+ * minor of the generation: Spring Session's generation 2021.2.x is the branch
+ * embargoed/lts/2.7.x, at 2021.2.9-SNAPSHOT. The OSS branches are not looked at, as they do not
+ * matter any more for these generations. A generation with no such branch gets the name
+ * embargoed/lts/<generation>, which the plan then says does not exist. More than one is a
+ * problem, which is added to `problems`. It returns { generation, branch } for each generation
+ * that has one.
+ */
+function ltsBranchesOf({ directory, remote, generations, problems }) {
+  const prefix = "embargoed/lts/";
+  const existing = git(
+    directory,
+    "for-each-ref",
+    "--format=%(refname)",
+    `refs/remotes/${remote}/${prefix}`,
+  )
+    .split("\n")
+    .filter(Boolean)
+    .map((ref) => ref.slice(`refs/remotes/${remote}/`.length))
+    .sort();
+  const named = new Set(
+    generations.map((g) => `${prefix}${g}`).filter((b) => existing.includes(b)),
+  );
+  const others = existing.filter((branch) => !named.has(branch));
+  const resolved = [];
+  for (const generation of generations) {
+    const direct = `${prefix}${generation}`;
+    if (named.has(direct)) {
+      resolved.push({ generation, branch: direct });
+      continue;
+    }
+    const wanted = majorMinor(generation);
+    const matches = others
+      .map((branch) => ({
+        branch,
+        version: readVersion(directory, `refs/remotes/${remote}/${branch}`),
+      }))
+      .filter(({ version }) => version && majorMinor(version) === wanted);
+    if (matches.length > 1) {
+      problems.push(
+        `${generation} could be the branch ${matches.map((m) => `${m.branch} (${m.version})`).join(" or ")} of the commercial repository: it needs one with a version of ${wanted}`,
+      );
+      continue;
+    }
+    resolved.push({
+      generation,
+      branch: matches.length === 1 ? matches[0].branch : direct,
+    });
+  }
+  return resolved;
+}
+
 /**
  * Plans a code freeze, and changes nothing but the remote of the OSS repository that it
  * fetches. It looks at every branch to freeze and says what is to be done: the version it
@@ -36824,7 +36882,8 @@ function addOssRemote({ directory, remote, url }) {
  *
  * - An OSS branch (7.0.x, main) has the frozen and the active embargoed branch of its
  *   generation, in the commercial repository. The three have one version.
- * - A long-term support generation (6.5.x) has one branch, embargoed/lts/6.5.x.
+ * - A long-term support generation (6.5.x) has one branch, embargoed/lts/6.5.x, or else the
+ *   embargoed/lts branch with a version of its major and minor (2021.2.x is embargoed/lts/2.7.x).
  * - A release is built from the branch: release/7.0.5 from the frozen branch (it is the release
  *   of the OSS branch too), release/7.0.5.1 from the active branch if it has changes that the
  *   frozen one lacks (the hotfix), release/6.5.11 from a long-term support branch. Each must
@@ -36985,8 +37044,12 @@ async function planFreeze(
     }
   }
 
-  for (const generation of ltsGenerations) {
-    const branch = `embargoed/lts/${generation}`;
+  for (const { generation, branch } of ltsBranchesOf({
+    directory,
+    remote: commercialRemote,
+    generations: ltsGenerations,
+    problems,
+  })) {
     const ref = `refs/remotes/${commercialRemote}/${branch}`;
     if (!src_exists(directory, ref)) {
       problems.push(`${branch} does not exist in the commercial repository`);

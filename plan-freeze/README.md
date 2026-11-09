@@ -4,7 +4,7 @@ Plans a code freeze and says what is to be done, or everything that stops it. It
 
 ## What it looks at
 
-For every OSS branch (`7.0.x`, `main`) it reads `gradle.properties` of the OSS branch and of `embargoed/frozen/<branch>` and `embargoed/active/<branch>` of the commercial repository: the three must have **one version**. A long-term support generation (`6.5.x`) has one branch, `embargoed/lts/6.5.x`.
+For every OSS branch (`7.0.x`, `main`) it reads `gradle.properties` of the OSS branch and of `embargoed/frozen/<branch>` and `embargoed/active/<branch>` of the commercial repository: the three must have **one version**. A long-term support generation (`6.5.x`) has one branch, `embargoed/lts/6.5.x` of the commercial repository, or, if there is none of that name, the one `embargoed/lts/*` branch that no generation is named after and whose `gradle.properties` has a version of the major and minor of the generation (`2021.2.x` of Spring Session is `embargoed/lts/2.7.x`, at `2021.2.9-SNAPSHOT`). More than one is a problem, and none is a branch that does not exist. The OSS branches of these generations are not read.
 
 **The next version.** The last segment plus one (`7.0.5-SNAPSHOT` gives `7.0.6-SNAPSHOT`). A `.0` version is the exception: it stays while the milestone `x.y.0` (the GA, open or closed) does not exist, and is `x.y.1-SNAPSHOT` once it does. Hotfix milestones (`7.2.0.1`) and milestones and release candidates (`7.2.0-RC1`) do not count. A version that stays gets no commit. The milestones are read from the OSS repository and from the commercial one.
 
