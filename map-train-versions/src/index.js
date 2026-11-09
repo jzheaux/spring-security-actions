@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import * as core from "@actions/core";
 import { parseBoolean } from "./inputs.js";
+import { findOverride, parseOverrides } from "./overrides.js";
 import { execute, isMain } from "./run.js";
 import { readVersions } from "./toml.js";
 import {
@@ -38,6 +39,9 @@ const generationOrNull = (version) => {
  * - a suffix is added: hotfixSuffix to a hotfix, suffix to the others (-INTERNAL-SNAPSHOT
  *   for example). A milestone or a release candidate is dropped first, a snapshot never
  *   carries one: the snapshot of 7.1.0-RC1 is 7.1.0-SNAPSHOT.
+ * - the suffix of a project, or of a version of it, can be overridden (overrides, from
+ *   parseOverrides): the rule for the version chosen, else for its generation, else for the
+ *   project, whether it is a hotfix or not.
  * - if the catalog has that version already (with the suffix), it is updated already, and
  *   left alone, and so it is if it has the version of the train itself and a suffix is
  *   asked for. If the catalog has a newer version than the train, it fails.
@@ -53,6 +57,7 @@ export function mapVersions({
   requireJoined = true,
   suffix = "",
   hotfixSuffix = "",
+  overrides = [],
 }) {
   if (requireJoined && !train) {
     throw new Error(
@@ -101,7 +106,8 @@ export function mapVersions({
         `${name} is ${current}, which is newer than the ${chosen} of the train`,
       );
     }
-    const added = hotfix ? hotfixSuffix : suffix;
+    const override = findOverride(overrides, name, chosen, `${generation}.x`);
+    const added = override ? override.suffix : hotfix ? hotfixSuffix : suffix;
     const version = added ? withoutQualifier(chosen) + added : chosen;
     if (version === current) {
       log.push(`${name} ${current}: already ${version}, left alone`);
@@ -116,7 +122,9 @@ export function mapVersions({
       continue;
     }
     changes[name] = version;
-    log.push(`${name} ${current}: to ${version}`);
+    log.push(
+      `${name} ${current}: to ${version}${override ? ` (override ${override.rule})` : ""}`,
+    );
   }
   return { changes, log };
 }
@@ -174,6 +182,10 @@ export async function main() {
     ),
     suffix: core.getInput("suffix"),
     hotfixSuffix: core.getInput("hotfix-suffix"),
+    overrides: parseOverrides(
+      process.env.SNAPSHOT_SUFFIX_OVERRIDES,
+      releaseVersions,
+    ),
   });
   log.forEach((line) => core.info(line));
   core.info(`${Object.keys(changes).length} versions to change`);

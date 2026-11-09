@@ -146,6 +146,7 @@ jobs:
     with:
       runs-on: ${{ vars.UBUNTU_RUNS_ON }}
       release-train-repository: ${{ vars.RELEASE_TRAIN_REPOSITORY }}
+      snapshot-suffix-overrides: ${{ vars.SNAPSHOT_SUFFIX_OVERRIDES }}
     secrets:
       RELEASE_AUTOMATION_TOKEN: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
 ```
@@ -167,6 +168,7 @@ The caller needs one secret and one variable, which are settings of the **commer
 | Name | Kind | What it is |
 |---|---|---|
 | `RELEASE_AUTOMATION_TOKEN` | secret | A token that can read the release train repository, run the workflow `Release Train - Join` of the commercial repository (Actions: Read and write), create issues in the OSS repository, read the milestones and create issues in the commercial repository (for a hotfix), and push to the commercial repository. See below. |
+| `SNAPSHOT_SUFFIX_OVERRIDES` | variable | Optional. Which snapshots of the dependencies are `-SNAPSHOT` or `-INTERNAL-SNAPSHOT` instead of what the kind of the release gives. The caller gives it as the input `snapshot-suffix-overrides`. One rule per line: `<project>=<suffix>` for every version of a project, or `<project>@<version>=<suffix>` for a version of the project in the release train (`7.0.10.1`, a hotfix too) or for its generation (`7.0.x`). The most specific rule wins. A rule that cannot be read, or for a project that is not in the train, fails the run. See `map-train-versions`. |
 | `RELEASE_TRAIN_REPOSITORY` | variable | The release train repository, `owner/repo`. The caller gives it as the input `release-train-repository`. If it is not set, the release train is `spring-io/release-train`. |
 
 Everything that can be done with the token of the workflow itself, `GITHUB_TOKEN`, is: the permissions of the workflow are `contents: read`, and it reads the milestones of the OSS repository, which is public. It cannot read the milestones of the commercial repository, which is private (that needs `issues: read`, and a called workflow cannot widen the permissions of its caller). `RELEASE_AUTOMATION_TOKEN` is only used where `GITHUB_TOKEN` cannot:
