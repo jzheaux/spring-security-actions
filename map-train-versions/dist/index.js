@@ -31594,6 +31594,86 @@ function parseBoolean(name, value, fallback) {
   throw new Error(`The input ${name} must be true or false, not "${value}"`);
 }
 
+;// CONCATENATED MODULE: ./src/overrides.js
+// The overrides of the suffix of a snapshot: which project, or which version of it, gets
+// -SNAPSHOT or -INTERNAL-SNAPSHOT whatever the workflow asks for.
+//
+//   spring-framework=-SNAPSHOT            every version of the project
+//   spring-data-bom@2025.1.x=-SNAPSHOT    the versions of a generation of it
+//   spring-framework@7.0.10.1=-INTERNAL-SNAPSHOT   one version of it (a hotfix too)
+//
+// One rule per line, or separated by commas. The version is the one of the project as the
+// train lists it, and not the name of the train.
+
+const SUFFIXES = ["-SNAPSHOT", "-INTERNAL-SNAPSHOT"];
+const VERSION = /^\d+\.\d+\.\d+(?:\.\d+)?$/;
+const GENERATION = /^\d+\.\d+\.x$/;
+
+/**
+ * Reads the rules. Throws, with the rule in the message, for one that cannot be read, one
+ * with a suffix that is not a snapshot, one for a project that the train does not have, and
+ * two rules for the same project and version.
+ *
+ * Returns [{ rule, project, version, suffix }], version is null for a whole project.
+ */
+function parseOverrides(text, releaseVersions) {
+  const seen = new Set();
+  const overrides = [];
+  for (const rule of (text ?? "")
+    .split(/[\n,]/)
+    .map((line) => line.trim())
+    .filter(Boolean)) {
+    const match = /^([^@=\s]+)(?:@([^=\s]+))?=(\S+)$/.exec(rule);
+    if (!match) {
+      throw new Error(
+        `Cannot read the snapshot suffix override "${rule}": expected <project>=<suffix> or <project>@<version>=<suffix>`,
+      );
+    }
+    const [, project, version = null, suffix] = match;
+    if (!SUFFIXES.includes(suffix)) {
+      throw new Error(
+        `The snapshot suffix override "${rule}" has the suffix ${suffix}: it must be ${SUFFIXES.join(" or ")}`,
+      );
+    }
+    if (
+      version !== null &&
+      !VERSION.test(version) &&
+      !GENERATION.test(version)
+    ) {
+      throw new Error(
+        `The snapshot suffix override "${rule}" has the version ${version}: expected one version (7.0.10 or 7.0.10.1) or a generation (7.0.x)`,
+      );
+    }
+    if (releaseVersions && !Object.hasOwn(releaseVersions, project)) {
+      throw new Error(
+        `The snapshot suffix override "${rule}" is for ${project}, which is not a project of the train`,
+      );
+    }
+    const key = `${project}@${version ?? ""}`;
+    if (seen.has(key)) {
+      throw new Error(
+        `The snapshot suffix override for ${version ? `${project}@${version}` : project} is given twice`,
+      );
+    }
+    seen.add(key);
+    overrides.push({ rule, project, version, suffix });
+  }
+  return overrides;
+}
+
+/**
+ * The most specific rule for a version of a project: the version itself, then its
+ * generation, then the whole project. Undefined if there is none.
+ */
+function findOverride(overrides, project, version, generation) {
+  const of = overrides.filter((o) => o.project === project);
+  return (
+    of.find((o) => o.version === version) ??
+    of.find((o) => o.version === generation) ??
+    of.find((o) => o.version === null)
+  );
+}
+
 // EXTERNAL MODULE: external "node:url"
 var external_node_url_ = __nccwpck_require__(3136);
 ;// CONCATENATED MODULE: ./src/run.js
@@ -31647,7 +31727,7 @@ async function execute(action) {
 // release automation relies on, one version on one line.
 
 const SECTION = /^\s*\[([^\]]+)\]\s*$/;
-const VERSION = /^([A-Za-z0-9_.-]+)(\s*=\s*)"([^"]*)"(\s*)$/;
+const toml_VERSION = /^([A-Za-z0-9_.-]+)(\s*=\s*)"([^"]*)"(\s*)$/;
 
 /**
  * The versions of the [versions] section, as a Map from the name to the value, in the
@@ -31662,7 +31742,7 @@ function readVersions(text) {
       inVersions = section[1].trim() === "versions";
       continue;
     }
-    const version = inVersions ? VERSION.exec(line) : null;
+    const version = inVersions ? toml_VERSION.exec(line) : null;
     if (version) {
       versions.set(version[1], version[3]);
     }
@@ -31690,7 +31770,7 @@ function setVersion(text, name, value) {
       inVersions = section[1].trim() === "versions";
       continue;
     }
-    const version = inVersions ? VERSION.exec(lines[i]) : null;
+    const version = inVersions ? toml_VERSION.exec(lines[i]) : null;
     if (version && version[1] === name) {
       lines[i] = `${version[1]}${version[2]}"${value}"${version[4]}`;
       return lines.join("");
@@ -31802,6 +31882,7 @@ function withoutQualifier(text) {
 
 
 
+
 const newest = (versions) =>
   versions.reduce((a, b) => (compareVersions(a, b) >= 0 ? a : b));
 
@@ -31830,6 +31911,9 @@ const generationOrNull = (version) => {
  * - a suffix is added: hotfixSuffix to a hotfix, suffix to the others (-INTERNAL-SNAPSHOT
  *   for example). A milestone or a release candidate is dropped first, a snapshot never
  *   carries one: the snapshot of 7.1.0-RC1 is 7.1.0-SNAPSHOT.
+ * - the suffix of a project, or of a version of it, can be overridden (overrides, from
+ *   parseOverrides): the rule for the version chosen, else for its generation, else for the
+ *   project, whether it is a hotfix or not.
  * - if the catalog has that version already (with the suffix), it is updated already, and
  *   left alone, and so it is if it has the version of the train itself and a suffix is
  *   asked for. If the catalog has a newer version than the train, it fails.
@@ -31845,6 +31929,7 @@ function mapVersions({
   requireJoined = true,
   suffix = "",
   hotfixSuffix = "",
+  overrides = [],
 }) {
   if (requireJoined && !train) {
     throw new Error(
@@ -31893,7 +31978,8 @@ function mapVersions({
         `${name} is ${current}, which is newer than the ${chosen} of the train`,
       );
     }
-    const added = hotfix ? hotfixSuffix : suffix;
+    const override = findOverride(overrides, name, chosen, `${generation}.x`);
+    const added = override ? override.suffix : hotfix ? hotfixSuffix : suffix;
     const version = added ? withoutQualifier(chosen) + added : chosen;
     if (version === current) {
       log.push(`${name} ${current}: already ${version}, left alone`);
@@ -31908,7 +31994,9 @@ function mapVersions({
       continue;
     }
     changes[name] = version;
-    log.push(`${name} ${current}: to ${version}`);
+    log.push(
+      `${name} ${current}: to ${version}${override ? ` (override ${override.rule})` : ""}`,
+    );
   }
   return { changes, log };
 }
@@ -31966,6 +32054,10 @@ async function main() {
     ),
     suffix: getInput("suffix"),
     hotfixSuffix: getInput("hotfix-suffix"),
+    overrides: parseOverrides(
+      process.env.SNAPSHOT_SUFFIX_OVERRIDES,
+      releaseVersions,
+    ),
   });
   log.forEach((line) => info(line));
   info(`${Object.keys(changes).length} versions to change`);

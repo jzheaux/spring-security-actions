@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { mapVersions } from "../src/index.js";
+import { parseOverrides } from "../src/overrides.js";
 import { readVersions } from "../src/toml.js";
 import { runAction } from "./support/run-action.js";
 
@@ -268,6 +269,104 @@ describe("milestones and release candidates", () => {
   });
 });
 
+describe("overrides of the suffix", () => {
+  const hotfix = {
+    preferHotfix: true,
+    hotfixSuffix: "-SNAPSHOT",
+    suffix: "-INTERNAL-SNAPSHOT",
+  };
+  const withRules = (rules, options = hotfix) => {
+    const { releaseVersions } = readTrain("2026.11.19");
+    return map({
+      ...options,
+      overrides: parseOverrides(rules, releaseVersions),
+    });
+  };
+
+  it("forces a hotfix of a project to the internal snapshot", () => {
+    const { changes, log } = withRules("spring-framework=-INTERNAL-SNAPSHOT");
+    expect(changes["spring-framework"]).toBe("7.0.10.1-INTERNAL-SNAPSHOT");
+    expect(changes["spring-ldap"]).toBe("4.0.6.1-SNAPSHOT");
+    expect(log).toContain(
+      "spring-framework 7.0.9: to 7.0.10.1-INTERNAL-SNAPSHOT (override spring-framework=-INTERNAL-SNAPSHOT)",
+    );
+  });
+
+  it("forces the snapshot where the workflow asks for the internal one", () => {
+    const { changes } = withRules("reactor=-SNAPSHOT", {
+      suffix: "-INTERNAL-SNAPSHOT",
+    });
+    expect(changes.reactor).toBe("2025.0.8-SNAPSHOT");
+    expect(changes["spring-framework"]).toBe("7.0.10-INTERNAL-SNAPSHOT");
+  });
+
+  it("takes a generation of a project, and not another one", () => {
+    expect(
+      withRules("spring-framework@7.0.x=-INTERNAL-SNAPSHOT").changes[
+        "spring-framework"
+      ],
+    ).toBe("7.0.10.1-INTERNAL-SNAPSHOT");
+    expect(
+      withRules("spring-framework@7.1.x=-INTERNAL-SNAPSHOT").changes[
+        "spring-framework"
+      ],
+    ).toBe("7.0.10.1-SNAPSHOT");
+  });
+
+  it("takes the version that is chosen, and not another one", () => {
+    const rule = (version) =>
+      withRules(`spring-framework@${version}=-INTERNAL-SNAPSHOT`).changes[
+        "spring-framework"
+      ];
+    expect(rule("7.0.10.1")).toBe("7.0.10.1-INTERNAL-SNAPSHOT");
+    expect(rule("7.0.10")).toBe("7.0.10.1-SNAPSHOT"); // the hotfix is chosen, not 7.0.10
+  });
+
+  it("prefers the version over the generation over the project", () => {
+    const rules = [
+      "spring-framework=-SNAPSHOT",
+      "spring-framework@7.0.x=-INTERNAL-SNAPSHOT",
+      "spring-framework@7.0.10.1=-SNAPSHOT",
+    ];
+    expect(withRules(rules.join("\n")).changes["spring-framework"]).toBe(
+      "7.0.10.1-SNAPSHOT",
+    );
+    expect(
+      withRules(rules.slice(0, 2).join(",")).changes["spring-framework"],
+    ).toBe("7.0.10.1-INTERNAL-SNAPSHOT");
+  });
+
+  it("changes nothing without rules", () => {
+    expect(withRules("").changes).toEqual(map(hotfix).changes);
+  });
+
+  it("fails for a rule that cannot be read, with the rule in the message", () => {
+    const { releaseVersions } = readTrain("2026.11.19");
+    const fails = (text) => () => parseOverrides(text, releaseVersions);
+    expect(fails("spring-framework")).toThrow('"spring-framework"');
+    expect(fails("spring-framework=-RELEASE")).toThrow(
+      "must be -SNAPSHOT or -INTERNAL-SNAPSHOT",
+    );
+    expect(fails("spring-framework@7.0=-SNAPSHOT")).toThrow("7.0");
+    expect(fails("spring-*=-SNAPSHOT")).toThrow("not a project of the train");
+    expect(fails("nope=-SNAPSHOT")).toThrow("nope");
+    expect(fails("reactor=-SNAPSHOT,reactor=-INTERNAL-SNAPSHOT")).toThrow(
+      "given twice",
+    );
+  });
+
+  it("ignores blank lines and spaces", () => {
+    expect(parseOverrides(" reactor=-SNAPSHOT \n\n, ", undefined)).toEqual([
+      {
+        rule: "reactor=-SNAPSHOT",
+        project: "reactor",
+        version: null,
+        suffix: "-SNAPSHOT",
+      },
+    ]);
+  });
+});
+
 describe("what is wrong", () => {
   it("fails if the catalog has a newer version than the train", () => {
     expect(() => map({}, catalog({ micrometer: "1.16.9" }))).toThrow(
@@ -344,6 +443,29 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       expect(JSON.parse(result.outputs.versions)["spring-framework"]).toBe(
         "7.0.10-INTERNAL-SNAPSHOT",
       );
+    });
+
+    it("takes the overrides of the suffix from SNAPSHOT_SUFFIX_OVERRIDES", async () => {
+      const result = await runAction(
+        entry,
+        inputs({
+          "prefer-hotfix": "true",
+          suffix: "-INTERNAL-SNAPSHOT",
+          "hotfix-suffix": "-SNAPSHOT",
+        }),
+        {
+          SNAPSHOT_SUFFIX_OVERRIDES:
+            "spring-framework@7.0.10.1=-INTERNAL-SNAPSHOT",
+        },
+      );
+      expect(JSON.parse(result.outputs.versions)).toMatchObject({
+        "spring-framework": "7.0.10.1-INTERNAL-SNAPSHOT",
+        "spring-ldap": "4.0.6.1-SNAPSHOT",
+      });
+      const bad = await runAction(entry, inputs(), {
+        SNAPSHOT_SUFFIX_OVERRIDES: "nope=-SNAPSHOT",
+      });
+      expect(bad.code).not.toBe(0);
     });
 
     it("takes the versions as JSON instead of files", async () => {

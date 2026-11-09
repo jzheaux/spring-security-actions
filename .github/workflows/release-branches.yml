@@ -82,6 +82,11 @@ on:
         type: string
         required: false
         default: spring-io/release-train
+      snapshot-suffix-overrides:
+        description: "Which snapshots of the dependencies are -SNAPSHOT or -INTERNAL-SNAPSHOT instead of what the kind of the release gives (-INTERNAL-SNAPSHOT, -SNAPSHOT for a hotfix and a long-term support version). One rule per line: <project>=<suffix> or <project>@<version>=<suffix>, the version being one of the project in the release train (7.0.10.1) or its generation (7.0.x). Empty for none"
+        type: string
+        required: false
+        default: ""
     secrets:
       RELEASE_AUTOMATION_TOKEN:
         description: "The token that checks out and pushes the commercial repository (so that the push runs the workflows of the new branches), reads the release train, reads the milestone of a hotfix and creates the issues of its dependency updates in the commercial repository, and creates the issues of the other releases in the OSS repository"
@@ -320,6 +325,8 @@ jobs:
       - name: Work out the snapshots of the dependencies
         id: snapshot-versions
         if: steps.train.outputs.found == 'true'
+        env:
+          SNAPSHOT_SUFFIX_OVERRIDES: ${{ inputs.snapshot-suffix-overrides }}
         uses: spring-io/spring-security-actions/map-train-versions@f3364626cff90963a8eedd33f9218cbdd2883f31 # 0.0.19
         with:
           release-versions-file: ${{ steps.train.outputs.release-versions-file }}
