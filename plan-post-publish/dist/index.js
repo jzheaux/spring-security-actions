@@ -28629,6 +28629,7 @@ __nccwpck_require__.d(__webpack_exports__, {
   iW: () => (/* binding */ main),
   et: () => (/* binding */ plan),
   OW: () => (/* binding */ resolveChain),
+  _i: () => (/* binding */ resolveLtsBranches),
   YG: () => (/* binding */ summaryOf)
 });
 
@@ -31587,7 +31588,7 @@ const DEFAULT_API_URL = "https://api.spring.io";
 /**
  * The generations of a project from the Spring projects API
  * (GET <api>/projects/<project>/generations, a HAL list in _embedded.generations, each
- * with name, ossSupportEndDate and commercialSupportEndDate as YYYY-MM-DD or null): what
+ * with name, initialReleaseDate, ossSupportEndDate and commercialSupportEndDate as YYYY-MM-DD or null): what
  * `spring-versions` shows.
  */
 async function readGenerations({ apiUrl, project }, { fetch }) {
@@ -31615,22 +31616,24 @@ async function readGenerations({ apiUrl, project }, { fetch }) {
   return generations;
 }
 
-/** [major, minor] of a generation, 7.1.x gives [7, 1]. */
-function numbersOf(generation) {
-  const match = /^(\d+)\.(\d+)\.x$/.exec(generation);
-  if (!match) {
+const initialReleaseOf = (name, date) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? "")) {
     throw new Error(
-      `"${generation}" is not a generation: expected <major>.<minor>.x`,
+      `The generation ${name} has no initialReleaseDate (YYYY-MM-DD) in the Spring projects API, which is the order of the generations`,
     );
   }
-  return [Number(match[1]), Number(match[2])];
-}
-
-const byGeneration = (a, b) => {
-  const [majorA, minorA] = numbersOf(a.generation);
-  const [majorB, minorB] = numbersOf(b.generation);
-  return majorA - majorB || minorA - minorB;
+  return date;
 };
+
+/**
+ * Oldest first: by the date of the initial release, and then by name. The names cannot be
+ * compared by their numbers: Spring Session calls a generation 2021.2.x, which is older than
+ * 3.4.x and 4.2.x. The end of the OSS support is no order either, as generations tie on it
+ * (Spring Security's 5.8.x and 6.0.x).
+ */
+const byRelease = (a, b) =>
+  a.initialRelease.localeCompare(b.initialRelease) ||
+  a.generation.localeCompare(b.generation);
 
 /**
  * What `spring-versions` shows, in the order of the generations (oldest first). A generation
@@ -31644,6 +31647,7 @@ function listGenerations(generations, today) {
   const supported = generations
     .map((g) => ({
       generation: g.name,
+      initialReleaseDate: g.initialReleaseDate,
       ossSupportEnd: g.ossSupportEndDate ?? null,
       commercialSupportEnd: g.commercialSupportEndDate ?? null,
     }))
@@ -31652,12 +31656,13 @@ function listGenerations(generations, today) {
     )
     .map((g) => ({
       ...g,
+      initialRelease: initialReleaseOf(g.generation, g.initialReleaseDate),
       type:
         g.ossSupportEnd !== null && g.ossSupportEnd >= today
           ? "OSS"
           : "COMMERCIAL",
     }))
-    .sort(byGeneration);
+    .sort(byRelease);
   const newestOss = supported.filter((g) => g.type === "OSS").at(-1);
   return supported.map(({ type, generation }) => ({
     type,
@@ -36891,8 +36896,8 @@ const majorMinor = (version) => /^(\d+\.\d+)[.-]/.exec(`${version}-`)?.[1];
 /**
  * The candidates for the branch of a tag, from `spring-versions` (the generations of the
  * Spring projects API): the OSS branches (7.0.x, 7.1.x, main) for an OSS release, and the
- * commercial (long-term support) generations, which are in embargoed/lts/<generation>, for a
- * long-term support one. Oldest first.
+ * commercial (long-term support) generations for a long-term support one, whose branch is
+ * embargoed/lts/<generation> until resolveLtsBranches finds the one that it is. Oldest first.
  */
 function candidatesOf(kind, generations, today) {
   const wanted = kind === "oss" ? "OSS" : "COMMERCIAL";
@@ -36902,6 +36907,66 @@ function candidatesOf(kind, generations, today) {
       generation: g.generation,
       branch: kind === "oss" ? g.branch : `embargoed/lts/${g.generation}`,
     }));
+}
+
+/**
+ * The commercial branch of each long-term support generation, which is embargoed/lts/<name> of
+ * the generation if the repository has it, and else the one embargoed/lts/* branch that no
+ * generation is named after, whose gradle.properties has a version of the major and minor of
+ * the generation: Spring Session's generation 2021.2.x is the branch embargoed/lts/2.7.x, at
+ * 2021.2.9-SNAPSHOT. Only the commercial branches are looked at: for these generations the OSS
+ * ones do not matter any more. A generation that has none keeps embargoed/lts/<name>, so that
+ * the branches that are missing are listed with the others. More than one fails.
+ */
+async function resolveLtsBranches(candidates, { octokit, repository }) {
+  const prefix = "embargoed/lts/";
+  const refs = await call(
+    `Listing the long-term support branches of ${repository}`,
+    octokit.paginate(octokit.rest.git.listMatchingRefs, {
+      ...parseRepository(repository),
+      ref: "heads/embargoed/lts",
+      per_page: 100,
+    }),
+  );
+  const existing = refs
+    .map((r) => r.ref.replace(/^refs\/heads\//, ""))
+    .filter((branch) => branch.startsWith(prefix))
+    .sort();
+  const named = new Set(
+    candidates.map((c) => c.branch).filter((b) => existing.includes(b)),
+  );
+  const others = existing.filter((branch) => !named.has(branch));
+  const versions = new Map();
+  const resolved = [];
+  for (const candidate of candidates) {
+    if (existing.includes(candidate.branch)) {
+      resolved.push(candidate);
+      continue;
+    }
+    const wanted = majorMinor(candidate.generation);
+    const matches = [];
+    for (const branch of others) {
+      if (!versions.has(branch)) {
+        versions.set(branch, await branchVersion(octokit, repository, branch));
+      }
+      const version = versions.get(branch);
+      if (version && majorMinor(version) === wanted) {
+        matches.push({ branch, version });
+      }
+    }
+    if (matches.length > 1) {
+      throw new TitledError(
+        "No branch for the generation",
+        `The generation ${candidate.generation} could be the branch ${matches.map((m) => `${m.branch} (${m.version})`).join(" or ")} of ${repository}: nothing was changed`,
+      );
+    }
+    resolved.push(
+      matches.length === 1
+        ? { ...candidate, branch: matches[0].branch }
+        : candidate,
+    );
+  }
+  return resolved;
 }
 
 /**
@@ -37063,7 +37128,14 @@ async function plan(
       );
     }
     const generations = await readGenerations({ apiUrl, project }, { fetch });
-    const candidates = candidatesOf(kind, generations, today);
+    const listed = candidatesOf(kind, generations, today);
+    const candidates =
+      kind === "oss"
+        ? listed
+        : await resolveLtsBranches(listed, {
+            octokit,
+            repository: commercialRepository,
+          });
     const chain = await resolveChain(
       {
         kind,
@@ -37232,5 +37304,6 @@ var __webpack_exports__candidatesOf = __webpack_exports__.kW;
 var __webpack_exports__main = __webpack_exports__.iW;
 var __webpack_exports__plan = __webpack_exports__.et;
 var __webpack_exports__resolveChain = __webpack_exports__.OW;
+var __webpack_exports__resolveLtsBranches = __webpack_exports__._i;
 var __webpack_exports__summaryOf = __webpack_exports__.YG;
-export { __webpack_exports__DEFAULT_PLAN_FILE as DEFAULT_PLAN_FILE, __webpack_exports__candidatesOf as candidatesOf, __webpack_exports__main as main, __webpack_exports__plan as plan, __webpack_exports__resolveChain as resolveChain, __webpack_exports__summaryOf as summaryOf };
+export { __webpack_exports__DEFAULT_PLAN_FILE as DEFAULT_PLAN_FILE, __webpack_exports__candidatesOf as candidatesOf, __webpack_exports__main as main, __webpack_exports__plan as plan, __webpack_exports__resolveChain as resolveChain, __webpack_exports__resolveLtsBranches as resolveLtsBranches, __webpack_exports__summaryOf as summaryOf };

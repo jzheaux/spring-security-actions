@@ -105,8 +105,8 @@ const majorMinor = (version) => /^(\d+\.\d+)[.-]/.exec(`${version}-`)?.[1];
 /**
  * The candidates for the branch of a tag, from `spring-versions` (the generations of the
  * Spring projects API): the OSS branches (7.0.x, 7.1.x, main) for an OSS release, and the
- * commercial (long-term support) generations, which are in embargoed/lts/<generation>, for a
- * long-term support one. Oldest first.
+ * commercial (long-term support) generations for a long-term support one, whose branch is
+ * embargoed/lts/<generation> until resolveLtsBranches finds the one that it is. Oldest first.
  */
 export function candidatesOf(kind, generations, today) {
   const wanted = kind === "oss" ? "OSS" : "COMMERCIAL";
@@ -116,6 +116,66 @@ export function candidatesOf(kind, generations, today) {
       generation: g.generation,
       branch: kind === "oss" ? g.branch : `embargoed/lts/${g.generation}`,
     }));
+}
+
+/**
+ * The commercial branch of each long-term support generation, which is embargoed/lts/<name> of
+ * the generation if the repository has it, and else the one embargoed/lts/* branch that no
+ * generation is named after, whose gradle.properties has a version of the major and minor of
+ * the generation: Spring Session's generation 2021.2.x is the branch embargoed/lts/2.7.x, at
+ * 2021.2.9-SNAPSHOT. Only the commercial branches are looked at: for these generations the OSS
+ * ones do not matter any more. A generation that has none keeps embargoed/lts/<name>, so that
+ * the branches that are missing are listed with the others. More than one fails.
+ */
+export async function resolveLtsBranches(candidates, { octokit, repository }) {
+  const prefix = "embargoed/lts/";
+  const refs = await call(
+    `Listing the long-term support branches of ${repository}`,
+    octokit.paginate(octokit.rest.git.listMatchingRefs, {
+      ...parseRepository(repository),
+      ref: "heads/embargoed/lts",
+      per_page: 100,
+    }),
+  );
+  const existing = refs
+    .map((r) => r.ref.replace(/^refs\/heads\//, ""))
+    .filter((branch) => branch.startsWith(prefix))
+    .sort();
+  const named = new Set(
+    candidates.map((c) => c.branch).filter((b) => existing.includes(b)),
+  );
+  const others = existing.filter((branch) => !named.has(branch));
+  const versions = new Map();
+  const resolved = [];
+  for (const candidate of candidates) {
+    if (existing.includes(candidate.branch)) {
+      resolved.push(candidate);
+      continue;
+    }
+    const wanted = majorMinor(candidate.generation);
+    const matches = [];
+    for (const branch of others) {
+      if (!versions.has(branch)) {
+        versions.set(branch, await branchVersion(octokit, repository, branch));
+      }
+      const version = versions.get(branch);
+      if (version && majorMinor(version) === wanted) {
+        matches.push({ branch, version });
+      }
+    }
+    if (matches.length > 1) {
+      throw new TitledError(
+        "No branch for the generation",
+        `The generation ${candidate.generation} could be the branch ${matches.map((m) => `${m.branch} (${m.version})`).join(" or ")} of ${repository}: nothing was changed`,
+      );
+    }
+    resolved.push(
+      matches.length === 1
+        ? { ...candidate, branch: matches[0].branch }
+        : candidate,
+    );
+  }
+  return resolved;
 }
 
 /**
@@ -277,7 +337,14 @@ export async function plan(
       );
     }
     const generations = await readGenerations({ apiUrl, project }, { fetch });
-    const candidates = candidatesOf(kind, generations, today);
+    const listed = candidatesOf(kind, generations, today);
+    const candidates =
+      kind === "oss"
+        ? listed
+        : await resolveLtsBranches(listed, {
+            octokit,
+            repository: commercialRepository,
+          });
     const chain = await resolveChain(
       {
         kind,

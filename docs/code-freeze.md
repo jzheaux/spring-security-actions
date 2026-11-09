@@ -14,7 +14,7 @@ It runs with a **dry run on by default**: it plans, makes the merges and the ver
 
 ## What it does
 
-1. **Plan** (nothing is changed). The branches are the OSS generations of the Spring projects API (`7.0.x`, `7.1.x`, `main`) and, for long-term support, the commercial ones (`6.4.x`, `6.5.x`), unless the inputs `branches` and `lts-branches` say otherwise. For each branch it works out the next version, and the release it needs. **Everything that stops the freeze is listed at once**, and the run fails before anything changes:
+1. **Plan** (nothing is changed). The branches are the OSS generations of the Spring projects API (`7.0.x`, `7.1.x`, `main`) and, for long-term support, the commercial ones (`6.4.x`, `6.5.x`), unless the inputs `branches` and `lts-branches` say otherwise. The generations are in the order of their release, which is the order of the merges (Spring Session's `2021.2.x` comes before `3.4.x`). A long-term support generation is the branch `embargoed/lts/<generation>`, or, if its name is not the name of its branch, the `embargoed/lts/*` branch that has a version of the generation (`2021.2.x` is `embargoed/lts/2.7.x`); its OSS branch is not read. For each branch it works out the next version, and the release it needs. **Everything that stops the freeze is listed at once**, and the run fails before anything changes:
    - a `release/<version>` does not exist or has not joined the release train, or the train does not exist (one that is **ready already** is not a problem: it is skipped, see below),
    - a branch does not exist, or the OSS, frozen and active branches of a generation have different versions,
    - a `.0` version has no open milestone,

@@ -6,20 +6,21 @@ const commercial = "spring-projects/spring-security-commercial";
 const today = "2026-11-05";
 
 // what the Spring projects API says: 5.7.x to 6.5.x are commercial, 7.0.x to 7.2.x are OSS
-const generation = (name, ossEnd, commercialEnd) => ({
+const generation = (name, ossEnd, commercialEnd, initialRelease) => ({
   name,
+  initialReleaseDate: initialRelease,
   ossSupportEndDate: ossEnd,
   commercialSupportEndDate: commercialEnd,
 });
 const GENERATIONS = [
-  generation("5.7.x", "2022-11-01", "2027-12-31"),
-  generation("5.8.x", "2023-11-01", "2027-12-31"),
-  generation("6.4.x", "2026-01-01", "2027-12-31"),
-  generation("6.5.x", "2026-06-01", "2028-12-31"),
-  generation("7.0.x", "2027-06-30", "2029-06-30"),
-  generation("7.1.x", "2027-12-31", "2029-12-31"),
-  generation("7.2.x", "2028-06-30", "2030-06-30"),
-  generation("4.0.x", "2018-01-01", "2020-01-01"), // not supported any more
+  generation("5.7.x", "2022-11-01", "2027-12-31", "2022-05-31"),
+  generation("5.8.x", "2023-11-01", "2027-12-31", "2022-11-30"),
+  generation("6.4.x", "2026-01-01", "2027-12-31", "2024-11-30"),
+  generation("6.5.x", "2026-06-01", "2028-12-31", "2025-05-31"),
+  generation("7.0.x", "2027-06-30", "2029-06-30", "2025-11-30"),
+  generation("7.1.x", "2027-12-31", "2029-12-31", "2026-06-30"),
+  generation("7.2.x", "2028-06-30", "2030-06-30", "2026-11-30"),
+  generation("4.0.x", "2018-01-01", "2020-01-01", "2018-01-01"), // not supported any more
 ];
 
 const fakeFetch =
@@ -69,6 +70,10 @@ function fakeOctokit({
           })),
       },
       git: {
+        listMatchingRefs: async ({ repo, ref }) =>
+          Object.keys(branches[repo])
+            .filter((branch) => `heads/${branch}`.startsWith(ref))
+            .map((branch) => ({ ref: `refs/heads/${branch}` })),
         getRef: async ({ repo, ref }) => {
           if (!tags[repo].includes(ref.replace("tags/", ""))) {
             throw notFound();
@@ -469,68 +474,109 @@ describe("a long-term support release", () => {
   });
 });
 
-describe("the branch of the tag, when no generation is named after it", () => {
-  const session = (generations, versions) => ({
-    fetch: fakeFetch(generations),
+// What api.spring.io says for spring-session: 2021.2.x, 3.4.x and 3.5.x are long-term support,
+// 4.0.x and 4.1.x are OSS, and 4.2.x is main. The branch of 2021.2.x is embargoed/lts/2.7.x, at
+// 2021.2.9-SNAPSHOT, and the others are named after their generation.
+const SESSION_GENERATIONS = [
+  generation("4.2.x", "2027-12-31", "2028-12-31", "2026-11-30"),
+  generation("2021.2.x", "2023-06-30", "2029-06-30", "2022-05-31"),
+  generation("3.5.x", "2026-06-30", "2032-06-30", "2025-05-31"),
+  generation("4.0.x", "2026-12-31", "2027-12-31", "2025-11-30"),
+  generation("3.3.x", "2025-06-30", "2026-06-30", "2024-05-31"),
+  generation("3.4.x", "2025-12-31", "2026-12-31", "2024-11-30"),
+  generation("4.1.x", "2027-07-31", "2028-07-31", "2026-06-30"),
+];
+const SESSION_LTS = {
+  "embargoed/lts/2.7.x": "2021.2.9-SNAPSHOT",
+  "embargoed/lts/3.4.x": "3.4.11-SNAPSHOT",
+  "embargoed/lts/3.5.x": "3.5.9-SNAPSHOT",
+};
+
+describe("a long-term support generation whose name is not the name of its branch (Spring Session)", () => {
+  const session = (tag, branches = SESSION_LTS) => ({
+    fetch: fakeFetch(SESSION_GENERATIONS),
     octokit: fakeOctokit({
-      commercialMilestones: [["2021.2.9", 29]],
-      commercialTags: ["2021.2.9"],
-      commercialBranches: versions,
+      commercialMilestones: [[tag, 29]],
+      commercialTags: [tag],
+      commercialBranches: branches,
     }),
   });
-  const SESSION_GENERATIONS = [
-    generation("2.7.x", "2023-01-01", "2027-12-31"),
-    generation("3.4.x", "2025-01-01", "2027-12-31"),
-    generation("3.5.x", "2026-01-01", "2028-12-31"),
-  ];
-
-  it("is the one whose gradle.properties has the version of the tag, for long-term support too", async () => {
-    const { fetch, octokit } = session(SESSION_GENERATIONS, {
-      "embargoed/lts/2.7.x": "2021.2.9-SNAPSHOT",
-      "embargoed/lts/3.4.x": "3.4.11-SNAPSHOT",
-      "embargoed/lts/3.5.x": "3.5.9-SNAPSHOT",
-    });
-    const { plan: result } = await plan(
-      { ...versions("2021.2.9"), ...common, project: "spring-session" },
-      { octokit, fetch },
+  const planFor = (tag, branches) =>
+    plan(
+      { ...versions(tag), ...common, project: "spring-session" },
+      session(tag, branches),
     );
-    expect(result.merge.branches.map((b) => b.branch)).toEqual([
-      "embargoed/lts/2.7.x",
+
+  it("plans a tag of 2021.2.x through embargoed/lts/2.7.x, and forward in the order of the release", async () => {
+    const { plan: result } = await planFor("2021.2.9");
+    expect(result.kind).toBe("lts");
+    expect(result.merge).toEqual({
+      kind: "lts",
+      tagRepository: commercial,
+      ref: null,
+      branches: [
+        { generation: "2021.2.x", branch: "embargoed/lts/2.7.x" },
+        { generation: "3.4.x", branch: "embargoed/lts/3.4.x" },
+        { generation: "3.5.x", branch: "embargoed/lts/3.5.x" },
+      ],
+    });
+    expect(result.deleteBranches).toEqual([
+      "release/2021.2.9",
+      "embargoed/2021.2.9-SNAPSHOT",
+    ]);
+  });
+
+  it("does not put 2021.2.x in the chain of a newer generation, whose number is smaller", async () => {
+    const { plan: three } = await planFor("3.4.11");
+    expect(three.merge.branches.map((b) => b.branch)).toEqual([
       "embargoed/lts/3.4.x",
+      "embargoed/lts/3.5.x",
+    ]);
+    const { plan: five } = await planFor("3.5.9");
+    expect(five.merge.branches.map((b) => b.branch)).toEqual([
       "embargoed/lts/3.5.x",
     ]);
   });
 
-  it("fails, and says so, when no branch has the version", async () => {
-    const { fetch, octokit } = session(SESSION_GENERATIONS, {
-      "embargoed/lts/2.7.x": "2.7.1-SNAPSHOT",
-      "embargoed/lts/3.4.x": "3.4.11-SNAPSHOT",
-      "embargoed/lts/3.5.x": "3.5.9-SNAPSHOT",
+  it("prefers the branch that is named after the generation", async () => {
+    const { plan: result } = await planFor("2021.2.9", {
+      ...SESSION_LTS,
+      "embargoed/lts/2021.2.x": "2021.2.9-SNAPSHOT",
     });
-    const error = await plan(
-      { ...versions("2021.2.9"), ...common },
-      { octokit, fetch },
-    ).catch((e) => e);
-    expect(error.title).toBe("No branch for the tag");
-    expect(error.message).toContain("2021.2.x");
-    expect(error.message).toContain("nothing was changed");
+    expect(result.merge.branches[0].branch).toBe("embargoed/lts/2021.2.x");
   });
 
-  it("fails when more than one branch has it", async () => {
-    const { fetch, octokit } = session(SESSION_GENERATIONS, {
-      "embargoed/lts/2.7.x": "2021.2.9-SNAPSHOT",
-      "embargoed/lts/3.4.x": "2021.2.10-SNAPSHOT",
-      "embargoed/lts/3.5.x": "3.5.9-SNAPSHOT",
-    });
-    const error = await plan(
-      { ...versions("2021.2.9"), ...common },
-      { octokit, fetch },
-    ).catch((e) => e);
+  it("lists the branch of the generation as missing when no branch has its version", async () => {
+    const error = await planFor("2021.2.9", {
+      ...SESSION_LTS,
+      "embargoed/lts/2.7.x": "2.7.1-SNAPSHOT",
+    }).catch((e) => e);
+    expect(error.title).toBe("Branches missing");
     expect(error.message).toContain(
-      "embargoed/lts/2.7.x (2021.2.9-SNAPSHOT) or embargoed/lts/3.4.x (2021.2.10-SNAPSHOT)",
+      `${commercial} has no branch embargoed/lts/2021.2.x`,
     );
   });
 
+  it("fails, naming them, when more than one branch has the version", async () => {
+    const error = await planFor("2021.2.9", {
+      ...SESSION_LTS,
+      "embargoed/lts/2.6.x": "2021.2.5-SNAPSHOT",
+    }).catch((e) => e);
+    expect(error.title).toBe("No branch for the generation");
+    expect(error.message).toContain(
+      "embargoed/lts/2.6.x (2021.2.5-SNAPSHOT) or embargoed/lts/2.7.x (2021.2.9-SNAPSHOT)",
+    );
+    expect(error.message).toContain("nothing was changed");
+  });
+
+  it("does not look at the OSS branches, which may be missing", async () => {
+    // the OSS repository of the fake has no branch at all, and not even a 2.7.x
+    const { plan: result } = await planFor("3.5.9");
+    expect(result.merge.kind).toBe("lts");
+  });
+});
+
+describe("the branch of the tag, when no generation is named after it", () => {
   it("finds an OSS branch by its version, as main for a generation that the API does not list", async () => {
     const listed = GENERATIONS.filter((g) => g.name !== "7.2.x");
     const octokit = everything();
