@@ -206,7 +206,7 @@ jobs:
           repository: ${{ github.repository }}
           milestone: ${{ steps.release.outputs.release-version }}
           due-date: ${{ steps.release.outputs.due-date }}
-          description: ${{ format('OSS milestone: {0}', steps.release.outputs.milestone-url) }}
+          description: "${{ format('OSS milestone: {0}', steps.release.outputs.milestone-url) }}"
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       # The milestone of the hotfix is there now. Without a due date on the OSS milestone that it
       # fixes, the hotfix has no release train, and the run stops: the same action asks for the
