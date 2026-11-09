@@ -325,8 +325,6 @@ jobs:
       - name: Work out the snapshots of the dependencies
         id: snapshot-versions
         if: steps.train.outputs.found == 'true'
-        env:
-          SNAPSHOT_SUFFIX_OVERRIDES: ${{ inputs.snapshot-suffix-overrides }}
         uses: spring-io/spring-security-actions/map-train-versions@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           release-versions-file: ${{ steps.train.outputs.release-versions-file }}
@@ -334,6 +332,7 @@ jobs:
           prefer-hotfix: ${{ env.HOTFIX }}
           suffix: ${{ env.KIND == 'lts' && '-SNAPSHOT' || '-INTERNAL-SNAPSHOT' }}
           hotfix-suffix: -SNAPSHOT
+          snapshot-suffix-overrides: ${{ inputs.snapshot-suffix-overrides }}
       - name: Update the dependencies of the snapshot
         if: steps.train.outputs.found == 'true'
         uses: spring-io/spring-security-actions/update-versions@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21

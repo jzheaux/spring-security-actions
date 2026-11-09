@@ -32055,7 +32055,7 @@ async function main() {
     suffix: getInput("suffix"),
     hotfixSuffix: getInput("hotfix-suffix"),
     overrides: parseOverrides(
-      process.env.SNAPSHOT_SUFFIX_OVERRIDES,
+      getInput("snapshot-suffix-overrides"),
       releaseVersions,
     ),
   });
