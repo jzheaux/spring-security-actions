@@ -82,27 +82,27 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Set the git identity
-        uses: spring-io/spring-security-actions/git-identity@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/git-identity@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
       - name: Name the repositories
         id: repositories
-        uses: spring-io/spring-security-actions/name-repositories@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/name-repositories@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
       - name: List the branches to freeze
         id: branches
-        uses: spring-io/spring-security-actions/list-branches@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/list-branches@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           project: ${{ steps.repositories.outputs.project }}
           branches: ${{ inputs.branches }}
           lts-branches: ${{ inputs.lts-branches }}
       - name: Read the release train
         id: train
-        uses: spring-io/spring-security-actions/load-train@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/load-train@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           release-train-repository: ${{ inputs.release-train-repository || 'spring-io/release-train' }}
           branch: ${{ inputs.release-train }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Plan the freeze
         id: plan
-        uses: spring-io/spring-security-actions/plan-freeze@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/plan-freeze@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           project: ${{ steps.repositories.outputs.project }}
           oss-repository: ${{ steps.repositories.outputs.oss-repository }}
@@ -113,34 +113,34 @@ jobs:
           train-file: ${{ steps.train.outputs.train-file }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Merge and bump the versions, locally
-        uses: spring-io/spring-security-actions/apply-freeze@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/apply-freeze@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
       # Nothing from the commercial repository may reach OSS, and the pushes must be accepted: this is
       # found out before anything is marked ready, which cannot be undone.
       - name: Check that no commercial code goes to OSS, and that the pushes would be accepted
-        uses: spring-io/spring-security-actions/push-freeze@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/push-freeze@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           mode: check
       - name: Mark the releases ready in the release train
         if: ${{ !inputs.dry-run }}
-        uses: spring-io/spring-security-actions/ready-train@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/ready-train@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           release-train-repository: ${{ inputs.release-train-repository || 'spring-io/release-train' }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Push the commercial repository, and then OSS
         if: ${{ !inputs.dry-run }}
-        uses: spring-io/spring-security-actions/push-freeze@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/push-freeze@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           mode: push
       # Last, so that a push that failed leaves the milestones open and the freeze can run again. A hotfix
       # milestone with no issues is deleted, and the others are closed, with open issues too.
       - name: Close the milestones of the releases
         if: ${{ !inputs.dry-run }}
-        uses: spring-io/spring-security-actions/close-milestones@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/close-milestones@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Summarize the freeze
         if: ${{ always() }}
-        uses: spring-io/spring-security-actions/freeze-summary@ac0a6623cca3c2e8dbb05725512eb0db539c31aa # 0.0.20
+        uses: spring-io/spring-security-actions/freeze-summary@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
         with:
           dry-run: ${{ inputs.dry-run }}
           job-status: ${{ job.status }}
