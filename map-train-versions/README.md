@@ -61,7 +61,7 @@ None. It reads files, and calls nothing.
 
 ## Overriding the suffix
 
-The variable `SNAPSHOT_SUFFIX_OVERRIDES` (an environment variable, as it is a setting of the run and not of the action) decides the suffix of a project, or of a version of it, whatever `suffix` and `hotfix-suffix` say. One rule per line, or separated by commas:
+The input `snapshot-suffix-overrides` decides the suffix of a project, or of a version of it, whatever `suffix` and `hotfix-suffix` say. One rule per line, or separated by commas:
 
 ```
 spring-framework=-SNAPSHOT
@@ -74,7 +74,7 @@ spring-framework@7.0.10.1=-INTERNAL-SNAPSHOT
 - The suffix is `-SNAPSHOT` or `-INTERNAL-SNAPSHOT`. A rule that cannot be read, one for a project that is not in the train, and two for the same project and version fail the run with the rule in the message, so that a typo does not change what is built.
 - The log says what it did: `spring-framework 7.0.9: to 7.0.10.1-INTERNAL-SNAPSHOT (override spring-framework=-INTERNAL-SNAPSHOT)`.
 
-`release-branches.yml` sets it on the step of the snapshot branch only, from its input `snapshot-suffix-overrides`.
+`release-branches.yml` passes its input `snapshot-suffix-overrides` to the step of the snapshot branch only. The caller of that workflow gives it from a repository variable (`vars.SNAPSHOT_SUFFIX_OVERRIDES`): the `env` context is not available in the `with` of a job that calls a workflow. Locally, it is `INPUT_SNAPSHOT-SUFFIX-OVERRIDES`.
 
 ## Using it
 

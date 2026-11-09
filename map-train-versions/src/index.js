@@ -183,7 +183,7 @@ export async function main() {
     suffix: core.getInput("suffix"),
     hotfixSuffix: core.getInput("hotfix-suffix"),
     overrides: parseOverrides(
-      process.env.SNAPSHOT_SUFFIX_OVERRIDES,
+      core.getInput("snapshot-suffix-overrides"),
       releaseVersions,
     ),
   });

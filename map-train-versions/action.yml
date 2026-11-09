@@ -32,6 +32,10 @@ inputs:
   hotfix-suffix:
     description: "Added to the version chosen, if it is a hotfix, for example -SNAPSHOT"
     required: false
+  snapshot-suffix-overrides:
+    description: "The suffix of a project, or of a version of it, whatever suffix and hotfix-suffix say. One rule per line: <project>=<suffix>, or <project>@<version>=<suffix> for a version of the project in the release train (7.0.10.1) or its generation (7.0.x). The suffix is -SNAPSHOT or -INTERNAL-SNAPSHOT. The most specific rule wins"
+    required: false
+    default: ""
 
 outputs:
   versions:

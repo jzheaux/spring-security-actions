@@ -69,7 +69,7 @@ jobs:
     steps:
       - name: Name the repositories
         id: repositories
-        uses: spring-io/spring-security-actions/name-repositories@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/name-repositories@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
       # All the branches of the commercial repository, and no credentials left in the checkout: the
       # back-up is uploaded, and the actions that push have the token of their own.
       - name: Check out the commercial repository
@@ -80,15 +80,15 @@ jobs:
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
           persist-credentials: false
       - name: Set the git identity
-        uses: spring-io/spring-security-actions/git-identity@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/git-identity@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
       - name: Work out the versions of the tag
         id: versions
-        uses: spring-io/spring-security-actions/compute-tag-versions@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/compute-tag-versions@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           tag: ${{ inputs.tag }}
       - name: Plan what is done
         id: plan
-        uses: spring-io/spring-security-actions/plan-post-publish@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/plan-post-publish@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           release-version: ${{ steps.versions.outputs.release-version }}
           base-version: ${{ steps.versions.outputs.base-version }}
@@ -103,7 +103,7 @@ jobs:
       # Before anything is changed: the branches that are deleted last are the ones that are backed up.
       - name: Back up the branches that are deleted
         id: backup
-        uses: spring-io/spring-security-actions/backup-branches@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/backup-branches@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           repository: ${{ steps.repositories.outputs.commercial-repository }}
           branches: ${{ steps.plan.outputs.delete-branches }}
@@ -120,7 +120,7 @@ jobs:
           overwrite: true
       - name: Copy the issues of the milestone to the OSS repository
         if: ${{ steps.plan.outputs.copy == 'true' }}
-        uses: spring-io/spring-security-actions/copy-milestone-issues@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/copy-milestone-issues@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           source-repository: ${{ steps.repositories.outputs.commercial-repository }}
           destination-repository: ${{ steps.repositories.outputs.oss-repository }}
@@ -129,7 +129,7 @@ jobs:
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Merge the tag into its branch, and forward, locally
         if: ${{ steps.plan.outputs.merge != 'none' }}
-        uses: spring-io/spring-security-actions/merge-tag@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/merge-tag@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           dry-run: ${{ inputs.dry-run }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
@@ -139,7 +139,7 @@ jobs:
       - name: Export the merged branches
         id: export
         if: ${{ steps.plan.outputs.merge != 'none' && inputs.dry-run }}
-        uses: spring-io/spring-security-actions/export-merges@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/export-merges@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           name: merged-branches-${{ inputs.tag }}
           dry-run: true
@@ -154,20 +154,20 @@ jobs:
       # Nothing from the commercial repository may reach OSS, and the pushes must be accepted.
       - name: Check that no commercial code goes to OSS, and that the pushes would be accepted
         if: ${{ steps.plan.outputs.merge != 'none' }}
-        uses: spring-io/spring-security-actions/push-merges@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/push-merges@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           mode: check
           summary: ${{ inputs.dry-run }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       - name: Push OSS, and then the commercial repository
         if: ${{ steps.plan.outputs.merge != 'none' && !inputs.dry-run }}
-        uses: spring-io/spring-security-actions/push-merges@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/push-merges@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           mode: push
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
       # Last: a branch that failed to be copied or merged is not deleted, and the run can be made again.
       - name: Delete the branches of the release
-        uses: spring-io/spring-security-actions/delete-branches@e8c023d09c9b6a658c6b0c85c0bbe71d9e5ad010 # 0.0.21
+        uses: spring-io/spring-security-actions/delete-branches@8a135f772b06a43c01fe6f805beda0d45b2ca848 # 0.0.21
         with:
           repository: ${{ steps.repositories.outputs.commercial-repository }}
           branches: ${{ steps.plan.outputs.delete-branches }}

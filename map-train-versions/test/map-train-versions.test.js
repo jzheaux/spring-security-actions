@@ -445,26 +445,25 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       );
     });
 
-    it("takes the overrides of the suffix from SNAPSHOT_SUFFIX_OVERRIDES", async () => {
+    it("takes the overrides of the suffix from the input snapshot-suffix-overrides", async () => {
       const result = await runAction(
         entry,
         inputs({
           "prefer-hotfix": "true",
           suffix: "-INTERNAL-SNAPSHOT",
           "hotfix-suffix": "-SNAPSHOT",
-        }),
-        {
-          SNAPSHOT_SUFFIX_OVERRIDES:
+          "snapshot-suffix-overrides":
             "spring-framework@7.0.10.1=-INTERNAL-SNAPSHOT",
-        },
+        }),
       );
       expect(JSON.parse(result.outputs.versions)).toMatchObject({
         "spring-framework": "7.0.10.1-INTERNAL-SNAPSHOT",
         "spring-ldap": "4.0.6.1-SNAPSHOT",
       });
-      const bad = await runAction(entry, inputs(), {
-        SNAPSHOT_SUFFIX_OVERRIDES: "nope=-SNAPSHOT",
-      });
+      const bad = await runAction(
+        entry,
+        inputs({ "snapshot-suffix-overrides": "nope=-SNAPSHOT" }),
+      );
       expect(bad.code).not.toBe(0);
     });
 
