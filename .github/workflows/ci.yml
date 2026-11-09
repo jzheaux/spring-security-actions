@@ -74,16 +74,56 @@ jobs:
       - name: Test
         run: npm test
 
+  # A workflow that is not valid is not started: GitHub only says that the file has an issue, and a
+  # reusable workflow that nothing runs on its own is not noticed until something calls it. So every
+  # workflow is linted (syntax, expressions, contexts, the scripts of the steps), and every action.yml
+  # is read as YAML and has what GitHub needs to run it.
+  lint:
+    name: Lint the workflows and the actions
+    runs-on: ubuntu-latest
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install actionlint
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check
+          tar --extract --gzip --file "$RUNNER_TEMP/$archive" --directory "$RUNNER_TEMP" actionlint
+      - name: Lint the workflows
+        run: '"$RUNNER_TEMP/actionlint" -color'
+      - name: Check every action.yml
+        run: |
+          status=0
+          for file in */action.yml; do
+            if ! yq --exit-status '.name and .description and .runs.using' "$file" > /dev/null; then
+              echo "::error file=$file::$file is not valid YAML, or has no name, description or runs.using"
+              status=1
+              continue
+            fi
+            main=$(yq '.runs.main // ""' "$file")
+            if [ -n "$main" ] && [ ! -f "$(dirname "$file")/$main" ]; then
+              echo "::error file=$file::runs.main of $file is $main, which does not exist"
+              status=1
+            fi
+          done
+          exit "$status"
+
   # The one job that a ruleset requires: the jobs of the matrix are named after the actions, which
   # come and go, so they cannot be required by name. A job that was skipped or failed fails this one.
   result:
     name: CI result
     if: always()
-    needs: [actions, check]
+    needs: [actions, check, lint]
     runs-on: ubuntu-latest
     env:
       ACTIONS: ${{ needs.actions.result }}
       CHECK: ${{ needs.check.result }}
+      LINT: ${{ needs.lint.result }}
     steps:
       - name: Check that every job passed
-        run: test "$ACTIONS" = success && test "$CHECK" = success
+        run: test "$ACTIONS" = success && test "$CHECK" = success && test "$LINT" = success
