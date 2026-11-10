@@ -31710,20 +31710,39 @@ function parse(text) {
 }
 
 /**
- * The commits of `to` that `from` does not have (git log from..to), the oldest first, without
- * the merge commits: the ones that are shown, and that the commands of the summary list.
+ * The merge commits of `from..to` that were made with `-s ours`: their tree is the one of their
+ * first parent, so nothing of what they merged is in the branch. git diff --quiet says so
+ * with the exit code 0.
  */
-function commitsNotIn(directory, from, to) {
+function oursMerges(directory, from, to) {
+  return git(directory, "rev-list", "--merges", `${from}..${to}`)
+    .split("\n")
+    .filter(Boolean)
+    .filter(
+      (merge) =>
+        gitTry(directory, "diff", "--quiet", `${merge}^1`, merge).code === 0,
+    );
+}
+
+/** What git is given to leave out what an `-s ours` merge merged in: its second parent. */
+const withoutMerged = (ours) => ours.map((merge) => `^${merge}^2`);
+
+/**
+ * The commits of `to` that `from` does not have (git log from..to), the oldest first: the
+ * ones that are shown, and that the commands of the summary list. Merge commits are in, except
+ * the ones made with `-s ours` (`ours`, see oursMerges) and the commits that they merged in.
+ */
+function commitsNotIn(directory, from, to, ours = []) {
   return parse(
     git(
       directory,
       "log",
-      "--no-merges",
       "--reverse",
       `--format=${FORMAT}`,
+      ...withoutMerged(ours),
       `${from}..${to}`,
     ),
-  );
+  ).filter(({ sha }) => !ours.includes(sha));
 }
 
 /**
@@ -31744,17 +31763,22 @@ function commitsMadeAfter(directory, from, to) {
   );
 }
 
-/** How many commits `to` has that `from` does not, with or without the merge commits. */
-function countCommits(directory, from, to, { merges }) {
-  return Number(
+/**
+ * How many commits `to` has that `from` does not, with or without the merge commits, leaving
+ * out the `-s ours` merges (`ours`) and the commits that they merged in.
+ */
+function countCommits(directory, from, to, { merges, ours = [] }) {
+  const count = Number(
     git(
       directory,
       "rev-list",
       "--count",
       ...(merges ? [] : ["--no-merges"]),
+      ...withoutMerged(ours),
       `${from}..${to}`,
     ),
   );
+  return merges ? count - ours.length : count;
 }
 
 /** The commit that a ref points to, or undefined if there is no such ref. */
@@ -32152,7 +32176,15 @@ const isRelease = (branch) => branch.startsWith("release/");
  * clone has it (for the command that the summary prints), the heading of the list, and
  * whether the clone needs OSS for it.
  */
-function compareWith({
+function compareWith(args) {
+  const comparison = chooseComparison(args);
+  return {
+    ...comparison,
+    heading: `${comparison.heading} (omits commits merged with -s ours)`,
+  };
+}
+
+function chooseComparison({
   directory,
   role,
   kind,
@@ -32314,7 +32346,8 @@ function collectReport({
       basedOn,
       previous,
     });
-    const commits = commitsNotIn(directory, compare.gitRef, branch);
+    const ours = oursMerges(directory, compare.gitRef, branch);
+    const commits = commitsNotIn(directory, compare.gitRef, branch, ours);
     const after = commitsMadeAfter(directory, base, branch);
     const section = {
       branch,
@@ -32322,20 +32355,25 @@ function collectReport({
       role,
       compare,
       commits,
+      ours,
       compareSha: resolve(directory, compare.gitRef),
       steps: { role, kind, base, refName, commits: after, basedOn, train },
       merged: role === "release" ? merged.release : merged.snapshot,
     };
     if (role === "release") {
       if (previous) {
+        const sinceOurs = oursMerges(directory, previous.gitRef, branch);
         section.since = {
           ...previous,
           sha: resolve(directory, previous.gitRef),
+          ours: sinceOurs,
           commits: countCommits(directory, previous.gitRef, branch, {
             merges: false,
+            ours: sinceOurs,
           }),
           all: countCommits(directory, previous.gitRef, branch, {
             merges: true,
+            ours: sinceOurs,
           }),
         };
       }
@@ -32343,6 +32381,17 @@ function collectReport({
     return section;
   });
   return { sections, base, remote, oss, kind };
+}
+
+/**
+ * The git log command of the summary. With `-s ours` merges in the range it leaves out what
+ * they merged in, as the list does (it still prints the merges themselves).
+ */
+function logCommand(flags, range, ours) {
+  if (ours.length === 0) {
+    return `git log ${flags} ${range}`;
+  }
+  return `git log ${flags} $(for m in $(git rev-list --merges ${range}); do git diff --quiet $m^1 $m && echo "^$m^2"; done) ${range}`;
 }
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -32381,12 +32430,16 @@ function renderSection(section, { cell }) {
   lines.push(
     "",
     "```shell",
-    `git log --oneline --no-merges --reverse ${section.compare.commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
+    logCommand(
+      "--oneline --reverse",
+      `${section.compare.commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
+      section.ours,
+    ),
     "```",
   );
 
   if (section.since) {
-    const { version, commits, all, sha, commandRef } = section.since;
+    const { version, commits, all, sha, commandRef, ours } = section.since;
     const merges = all - commits;
     const compare =
       repository && sha
@@ -32399,7 +32452,11 @@ function renderSection(section, { cell }) {
       `${plural(commits, "commit")} since ${version}${merges > 0 ? ` (${all} with the ${plural(merges, "merge commit")})` : ""}${compare}`,
       "",
       "```shell",
-      `git log --oneline --no-merges ${commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
+      logCommand(
+        "--oneline --no-merges",
+        `${commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
+        ours,
+      ),
       "```",
     );
   }

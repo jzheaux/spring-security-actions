@@ -86,7 +86,7 @@ The workflow reads the branch of the date, so the due date of the milestone of a
 The summary of the run (the page of the run on GitHub) says what the push created and how, so that nobody has to read the history of the branches to see what a hotfix has. It begins with the two branches that the push creates and uses for releasing: the snapshot, and the release, which are pushed together. Under it is the release train, and a table of the branches with the number of commits that what they are compared with lacks (OSS, the previous release, or the release a hotfix fixes). Then each branch has a section, the snapshot first, as it is built first:
 
 - **How it was created**: the steps that the run made, in order, each with its commit: it was started at the pushed commit, the merge of the branch that a hotfix is based on (or that it was skipped, because that branch does not exist), the commercial license, the version, and the dependency updates with their issues.
-- **Commits not in OSS** (the heading depends on the kind, see below): the commits of the branch that what it is compared with does not have, the oldest first, each with its subject and a link to its commit. Merge commits are not listed. A list has 50 at most, then `and N more` with a link to the compare view. Under the list is the `git log` command that prints it, in a clone of the repository, with no limit. What a branch is compared with:
+- **Commits not in OSS** (the heading depends on the kind, see below): the commits of the branch that what it is compared with does not have, the oldest first, each with its subject and a link to its commit. Merge commits are listed, except the ones made with `git merge -s ours` (the tree of the merge is the one of its first parent) and the commits that they merged in: the heading says `(omits commits merged with -s ours)`. A list has 50 at most, then `and N more` with a link to the compare view. Under the list is the `git log` command that prints it, in a clone of the repository, with no limit. When the branch has such a merge, the command has a small loop that leaves out what the `-s ours` merges merged in (`git diff --quiet $m^1 $m && echo "^$m^2"`); it still prints the merge commits themselves. What a branch is compared with:
   - a **hotfix** (heading **Commits not in `7.0.9`**): the OSS version that it is based on (the tag `7.0.9` for `7.0.9.1`). That release is not public yet while it is embargoed, so there is no such tag: the hotfix is compared with the branch that it is based on, `release/7.0.9` for the release and `embargoed/7.0.9-INTERNAL-SNAPSHOT` for the snapshot, and the heading says so.
   - a **frozen** branch (heading **Commits not in OSS**): the branch of OSS of its generation (`7.0.x`).
   - a **long-term support** branch (heading **Commits not in the previous release**): the release before it (`5.8.29` for `5.8.30`, found as for "All changes in this release"), since it is commercial and has no OSS release. With no release before it, the pushed commit.
@@ -103,10 +103,10 @@ release/7.0.9: How it was created
 2. Updated 1 dependency, with its issue: 95be8d4 (reactor 2025.0.9, Closes gh-20026).
 3. Set the version to 7.0.9 (50d0b06).
 
-Commits not in OSS 7.0.x
+Commits not in OSS 7.0.x (omits commits merged with -s ours)
 - 95be8d4 Update reactor to 2025.0.9
 - 50d0b06 Release 7.0.9
-    git log --oneline --no-merges --reverse oss/7.0.x..commercial/release/7.0.9
+    git log --oneline --reverse oss/7.0.x..commercial/release/7.0.9
 
 All changes in this release
 44 commits since 7.0.8 (60 with the 16 merge commits)
