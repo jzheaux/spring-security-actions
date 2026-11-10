@@ -3,7 +3,6 @@ import {
   commitsMadeAfter,
   commitsNotIn,
   countCommits,
-  oursMerges,
   resolve,
 } from "./commits.js";
 import { describeSteps } from "./steps.js";
@@ -38,15 +37,7 @@ const isRelease = (branch) => branch.startsWith("release/");
  * clone has it (for the command that the summary prints), the heading of the list, and
  * whether the clone needs OSS for it.
  */
-export function compareWith(args) {
-  const comparison = chooseComparison(args);
-  return {
-    ...comparison,
-    heading: `${comparison.heading} (omits commits merged with -s ours)`,
-  };
-}
-
-function chooseComparison({
+export function compareWith({
   directory,
   role,
   kind,
@@ -208,8 +199,7 @@ export function collectReport({
       basedOn,
       previous,
     });
-    const ours = oursMerges(directory, compare.gitRef, branch);
-    const commits = commitsNotIn(directory, compare.gitRef, branch, ours);
+    const commits = commitsNotIn(directory, compare.gitRef, branch);
     const after = commitsMadeAfter(directory, base, branch);
     const section = {
       branch,
@@ -217,25 +207,20 @@ export function collectReport({
       role,
       compare,
       commits,
-      ours,
       compareSha: resolve(directory, compare.gitRef),
       steps: { role, kind, base, refName, commits: after, basedOn, train },
       merged: role === "release" ? merged.release : merged.snapshot,
     };
     if (role === "release") {
       if (previous) {
-        const sinceOurs = oursMerges(directory, previous.gitRef, branch);
         section.since = {
           ...previous,
           sha: resolve(directory, previous.gitRef),
-          ours: sinceOurs,
           commits: countCommits(directory, previous.gitRef, branch, {
             merges: false,
-            ours: sinceOurs,
           }),
           all: countCommits(directory, previous.gitRef, branch, {
             merges: true,
-            ours: sinceOurs,
           }),
         };
       }
@@ -243,17 +228,6 @@ export function collectReport({
     return section;
   });
   return { sections, base, remote, oss, kind };
-}
-
-/**
- * The git log command of the summary. With `-s ours` merges in the range, the commands that it
- * is given leave out what they merged in, as the list does: the second parent of each.
- */
-function logCommand(flags, range, ours) {
-  if (ours.length === 0) {
-    return `git log ${flags} ${range}`;
-  }
-  return `for m in $(git rev-list --merges ${range}); do git diff --quiet $m^1 $m && echo "^$m^2"; done | xargs git log ${flags} ${range}`;
 }
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -292,16 +266,12 @@ export function renderSection(section, { cell }) {
   lines.push(
     "",
     "```shell",
-    logCommand(
-      "--oneline --no-merges --reverse",
-      `${section.compare.commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
-      section.ours,
-    ),
+    `git log --oneline --no-merges --reverse ${section.compare.commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
     "```",
   );
 
   if (section.since) {
-    const { version, commits, all, sha, commandRef, ours } = section.since;
+    const { version, commits, all, sha, commandRef } = section.since;
     const merges = all - commits;
     const compare =
       repository && sha
@@ -314,11 +284,7 @@ export function renderSection(section, { cell }) {
       `${plural(commits, "commit")} since ${version}${merges > 0 ? ` (${all} with the ${plural(merges, "merge commit")})` : ""}${compare}`,
       "",
       "```shell",
-      logCommand(
-        "--oneline --no-merges",
-        `${commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
-        ours,
-      ),
+      `git log --oneline --no-merges ${commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
       "```",
     );
   }

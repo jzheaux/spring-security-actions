@@ -50,12 +50,7 @@ export function createScenario() {
       },
     });
   };
-  // every commit changes a file of its own, so that a merge of branches brings content in (a
-  // merge of empty commits has the tree of its first parent, as one made with -s ours has)
-  let files = 0;
   const commit = (message, label) => {
-    fs.writeFileSync(path.join(work, `change-${++files}.txt`), `${message}\n`);
-    timed("add", "-A");
     timed("commit", "-q", "--allow-empty", "-m", message);
     const sha = git(work, "rev-parse", "HEAD");
     if (label) {
