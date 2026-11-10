@@ -22,29 +22,10 @@ function parse(text) {
 }
 
 /**
- * The merge commits of `from..to` that were made with `-s ours`: their tree is the one of their
- * first parent, so nothing of what they merged is in the branch. git diff --quiet says so
- * with the exit code 0.
+ * The commits of `to` that `from` does not have (git log from..to), the oldest first, without
+ * the merge commits: the ones that are shown, and that the commands of the summary list.
  */
-export function oursMerges(directory, from, to) {
-  return git(directory, "rev-list", "--merges", `${from}..${to}`)
-    .split("\n")
-    .filter(Boolean)
-    .filter(
-      (merge) =>
-        gitTry(directory, "diff", "--quiet", `${merge}^1`, merge).code === 0,
-    );
-}
-
-/** What git is given to leave out what an `-s ours` merge merged in: its second parent. */
-const withoutMerged = (ours) => ours.map((merge) => `^${merge}^2`);
-
-/**
- * The commits of `to` that `from` does not have (git log from..to), the oldest first: the
- * ones that are shown, and that the commands of the summary list, without the merge commits,
- * and without the commits that an `-s ours` merge merged in (`ours`, see oursMerges).
- */
-export function commitsNotIn(directory, from, to, ours = []) {
+export function commitsNotIn(directory, from, to) {
   return parse(
     git(
       directory,
@@ -52,7 +33,6 @@ export function commitsNotIn(directory, from, to, ours = []) {
       "--no-merges",
       "--reverse",
       `--format=${FORMAT}`,
-      ...withoutMerged(ours),
       `${from}..${to}`,
     ),
   );
@@ -76,22 +56,17 @@ export function commitsMadeAfter(directory, from, to) {
   );
 }
 
-/**
- * How many commits `to` has that `from` does not, with or without the merge commits, leaving
- * out the `-s ours` merges (`ours`) and the commits that they merged in.
- */
-export function countCommits(directory, from, to, { merges, ours = [] }) {
-  const count = Number(
+/** How many commits `to` has that `from` does not, with or without the merge commits. */
+export function countCommits(directory, from, to, { merges }) {
+  return Number(
     git(
       directory,
       "rev-list",
       "--count",
       ...(merges ? [] : ["--no-merges"]),
-      ...withoutMerged(ours),
       `${from}..${to}`,
     ),
   );
-  return merges ? count - ours.length : count;
 }
 
 /** The commit that a ref points to, or undefined if there is no such ref. */
