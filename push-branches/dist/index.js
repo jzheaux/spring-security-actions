@@ -28624,6 +28624,7 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
+  Nb: () => (/* binding */ commitsColumn),
   rx: () => (/* binding */ introduction),
   iW: () => (/* binding */ main),
   BE: () => (/* binding */ ossUrl),
@@ -31881,6 +31882,14 @@ function repositoryUrl() {
   return `${server}/${repository}`;
 }
 
+/**
+ * The names that the commands of the summary give to the remotes of a clone: the commercial
+ * repository (this one) and OSS, whatever the clone calls them (origin), so that the commands
+ * are the same for everybody.
+ */
+const COMMERCIAL_REMOTE = "commercial";
+const OSS_REMOTE = "oss";
+
 /** A sha as a short code, linked to its commit when the repository is known. */
 function commitLink(sha) {
   const short = `\`${sha.slice(0, 7)}\``;
@@ -32132,6 +32141,8 @@ const isRelease = (branch) => branch.startsWith("release/");
  * - a hotfix is compared with the OSS version that it is based on (the tag 7.0.9 for 7.0.9.1).
  *   Until that release is public there is no such tag, and it is compared with the branch that
  *   it is based on (release/7.0.9, or embargoed/7.0.9-INTERNAL-SNAPSHOT for the snapshot)
+ * - a long-term support branch (commercial, with no OSS release) is compared with the release
+ *   before it (`previous`, see previousRelease), 5.8.29 for 5.8.30
  * - the other branches are compared with the branch of the OSS repository of their generation
  *   (7.0.x)
  * - if that cannot be done (OSS has no such branch, or could not be read), or if the run
@@ -32149,21 +32160,41 @@ function compareWith({
   base,
   oss,
   basedOn,
+  previous,
 }) {
   const pushed = {
     gitRef: base,
     commandRef: base.slice(0, 10),
     oss: false,
   };
+  // the release that a hotfix fixes: 7.0.9 for 7.0.9.1
+  const fixed = oss.tag || /\d+\.\d+\.\d+/.exec(basedOn ?? "")?.[0];
+  const fixes = fixed ? `\`${fixed}\`` : "the release it fixes";
   const configured = Boolean(oss.url);
   const unreadable = oss.error ? `OSS could not be read: ${oss.error}` : "";
+
+  if (kind === "lts") {
+    if (previous) {
+      return {
+        gitRef: previous.gitRef,
+        commandRef: previous.commandRef,
+        heading: `**Commits not in the previous release \`${previous.version}\`**`,
+        oss: previous.oss,
+      };
+    }
+    return {
+      ...pushed,
+      heading:
+        "**Commits not in the previous release** (there is none, so these are the commits that the run made on the pushed commit)",
+    };
+  }
 
   if (kind === "active") {
     if (oss.tagRef) {
       return {
         gitRef: oss.tagRef,
         commandRef: oss.tag,
-        heading: `**Commits not in OSS \`${oss.tag}\`**`,
+        heading: `**Commits not in ${fixes}**`,
         oss: true,
       };
     }
@@ -32173,8 +32204,8 @@ function compareWith({
     if (branchRef && resolve(directory, branchRef)) {
       return {
         gitRef: branchRef,
-        commandRef: `${remote}/${basedOn}`,
-        heading: `**Commits not in OSS**${
+        commandRef: `${COMMERCIAL_REMOTE}/${basedOn}`,
+        heading: `**Commits not in ${fixes}**${
           why
             ? ` (${why}, so compared with \`${basedOn}\`, the branch it is based on)`
             : ` (compared with \`${basedOn}\`, the branch it is based on)`
@@ -32184,14 +32215,14 @@ function compareWith({
     }
     return {
       ...pushed,
-      heading: `**Commits not in OSS** (${why || "OSS is not known"}${basedOn ? `, and \`${basedOn}\` does not exist` : ""}, so these are the commits that the run made on the pushed commit)`,
+      heading: `**Commits not in ${fixes}** (${why || "OSS is not known"}${basedOn ? `, and \`${basedOn}\` does not exist` : ""}, so these are the commits that the run made on the pushed commit)`,
     };
   }
 
   if (oss.branchRef) {
     return {
       gitRef: oss.branchRef,
-      commandRef: `oss/${oss.branch}`,
+      commandRef: `${OSS_REMOTE}/${oss.branch}`,
       heading: `**Commits not in OSS \`${oss.branch}\`**`,
       oss: true,
     };
@@ -32232,7 +32263,7 @@ function previousRelease({ directory, remote, version }) {
     } else if ((match = /^refs\/tags\/(.+)$/.exec(ref))) {
       note(match[1], ref, match[1], 1);
     } else if ((match = /^refs\/remotes\/[^/]+\/release\/(.+)$/.exec(ref))) {
-      note(match[1], ref, `${remote}/release/${match[1]}`, 2);
+      note(match[1], ref, `${COMMERCIAL_REMOTE}/release/${match[1]}`, 2);
     }
   }
   const previous = previousVersion(version, [...found.keys()]);
@@ -32264,6 +32295,12 @@ function collectReport({
   const sorted = [...pushed].sort(
     (a, b) => Number(isRelease(a.branch)) - Number(isRelease(b.branch)),
   );
+  const releaseVersion = pushed.find(({ branch }) =>
+    isRelease(branch),
+  )?.version;
+  const previous = releaseVersion
+    ? previousRelease({ directory, remote, version: releaseVersion })
+    : undefined;
   const sections = sorted.map(({ branch, version }) => {
     const role = isRelease(branch) ? "release" : "snapshot";
     const basedOn = role === "release" ? releaseOf : snapshotOf;
@@ -32275,6 +32312,7 @@ function collectReport({
       base,
       oss,
       basedOn,
+      previous,
     });
     const commits = commitsNotIn(directory, compare.gitRef, branch);
     const after = commitsMadeAfter(directory, base, branch);
@@ -32289,7 +32327,6 @@ function collectReport({
       merged: role === "release" ? merged.release : merged.snapshot,
     };
     if (role === "release") {
-      const previous = previousRelease({ directory, remote, version });
       if (previous) {
         section.since = {
           ...previous,
@@ -32311,7 +32348,7 @@ function collectReport({
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** The lines of the section of a branch: how it was created, its commits, and its commands. */
-function renderSection(section, { remote, cell }) {
+function renderSection(section, { cell }) {
   const repository = repositoryUrl();
   const lines = [
     `#### ${cell(section.branch)}`,
@@ -32344,7 +32381,7 @@ function renderSection(section, { remote, cell }) {
   lines.push(
     "",
     "```shell",
-    `git log --oneline --no-merges --reverse ${section.compare.commandRef}..${remote}/${section.branch}`,
+    `git log --oneline --no-merges --reverse ${section.compare.commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
     "```",
   );
 
@@ -32362,7 +32399,7 @@ function renderSection(section, { remote, cell }) {
       `${plural(commits, "commit")} since ${version}${merges > 0 ? ` (${all} with the ${plural(merges, "merge commit")})` : ""}${compare}`,
       "",
       "```shell",
-      `git log --oneline --no-merges ${commandRef}..${remote}/${section.branch}`,
+      `git log --oneline --no-merges ${commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
       "```",
     );
   }
@@ -32374,22 +32411,26 @@ function renderSection(section, { remote, cell }) {
  * uses it, and the branches that were pushed.
  */
 function setupCommands(report) {
-  const { sections, oss, remote } = report;
+  const { sections, oss } = report;
   const lines = [];
   const usesOss =
     sections.some(({ compare, since }) => compare.oss || since?.oss) && oss.url;
   if (usesOss) {
     const branch = sections.some(({ compare }) =>
-      compare.commandRef.startsWith("oss/"),
+      compare.commandRef.startsWith(`${OSS_REMOTE}/`),
     )
       ? ` ${oss.branch}`
       : "";
     lines.push(
-      `git remote add oss ${oss.url}`,
-      `git fetch oss${branch} --tags`,
+      `git remote add ${OSS_REMOTE} ${oss.url}`,
+      `git fetch ${OSS_REMOTE}${branch} --tags`,
     );
   }
-  lines.push(`git fetch ${remote}`);
+  const repository = repositoryUrl();
+  if (repository) {
+    lines.unshift(`git remote add ${COMMERCIAL_REMOTE} ${repository}.git`);
+  }
+  lines.push(`git fetch ${COMMERCIAL_REMOTE}`);
   return { lines, usesOss: Boolean(usesOss) };
 }
 
@@ -32459,6 +32500,16 @@ function introduction(sections, kind) {
     return `This push creates the branch ${cells[0]}.`;
   }
   return `This push creates the branches ${cells.join(", ")}. They are pushed together (one atomic push).`;
+}
+
+/** The title of the column of the commits that a branch has and what it is compared with lacks. */
+function commitsColumn(kind) {
+  return (
+    {
+      lts: "Not in the previous release",
+      active: "Not in the release it fixes",
+    }[kind] ?? "Not in OSS"
+  );
 }
 
 /** The address that git fetches OSS from: the input oss-url, or the repository on the server. */
@@ -32543,7 +32594,7 @@ async function main() {
         getInput("train-state-url"),
       ),
       table(
-        ["Branch", "Version", "Not in OSS"],
+        ["Branch", "Version", commitsColumn(report.kind)],
         report.sections.map(({ branch, version, commits }) => [
           branchCell(branch),
           versionCell(version, getInput("milestone-url")),
@@ -32551,14 +32602,14 @@ async function main() {
         ]),
       ),
       "",
-      `The pushed commit is ${commitLink(base)}. To run the commands below, in a clone of this repository${setup.usesOss ? ", add OSS once and fetch the branches" : ", fetch the branches"}:`,
+      `The pushed commit is ${commitLink(base)}. To run the commands below, in a clone of this repository${setup.usesOss ? ", add the remotes once and fetch the branches" : ", add the remote once and fetch the branches"}:`,
       "",
       "```shell",
       ...setup.lines,
       "```",
       "",
       ...report.sections.flatMap((section) => [
-        ...renderSection(section, { remote, cell: (b) => `\`${b}\`` }),
+        ...renderSection(section, { cell: (b) => `\`${b}\`` }),
         "",
       ]),
     ].join("\n"),
@@ -32569,9 +32620,10 @@ if (isMain(import.meta.url)) {
   execute(main);
 }
 
+var __webpack_exports__commitsColumn = __webpack_exports__.Nb;
 var __webpack_exports__introduction = __webpack_exports__.rx;
 var __webpack_exports__main = __webpack_exports__.iW;
 var __webpack_exports__ossUrl = __webpack_exports__.BE;
 var __webpack_exports__parseBranches = __webpack_exports__.G;
 var __webpack_exports__pushBranches = __webpack_exports__.XB;
-export { __webpack_exports__introduction as introduction, __webpack_exports__main as main, __webpack_exports__ossUrl as ossUrl, __webpack_exports__parseBranches as parseBranches, __webpack_exports__pushBranches as pushBranches };
+export { __webpack_exports__commitsColumn as commitsColumn, __webpack_exports__introduction as introduction, __webpack_exports__main as main, __webpack_exports__ossUrl as ossUrl, __webpack_exports__parseBranches as parseBranches, __webpack_exports__pushBranches as pushBranches };

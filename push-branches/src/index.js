@@ -72,6 +72,16 @@ export function introduction(sections, kind) {
   return `This push creates the branches ${cells.join(", ")}. They are pushed together (one atomic push).`;
 }
 
+/** The title of the column of the commits that a branch has and what it is compared with lacks. */
+export function commitsColumn(kind) {
+  return (
+    {
+      lts: "Not in the previous release",
+      active: "Not in the release it fixes",
+    }[kind] ?? "Not in OSS"
+  );
+}
+
 /** The address that git fetches OSS from: the input oss-url, or the repository on the server. */
 export function ossUrl() {
   const url = core.getInput("oss-url");
@@ -154,7 +164,7 @@ export async function main() {
         core.getInput("train-state-url"),
       ),
       table(
-        ["Branch", "Version", "Not in OSS"],
+        ["Branch", "Version", commitsColumn(report.kind)],
         report.sections.map(({ branch, version, commits }) => [
           branchCell(branch),
           versionCell(version, core.getInput("milestone-url")),
@@ -162,14 +172,14 @@ export async function main() {
         ]),
       ),
       "",
-      `The pushed commit is ${commitLink(base)}. To run the commands below, in a clone of this repository${setup.usesOss ? ", add OSS once and fetch the branches" : ", fetch the branches"}:`,
+      `The pushed commit is ${commitLink(base)}. To run the commands below, in a clone of this repository${setup.usesOss ? ", add the remotes once and fetch the branches" : ", add the remote once and fetch the branches"}:`,
       "",
       "```shell",
       ...setup.lines,
       "```",
       "",
       ...report.sections.flatMap((section) => [
-        ...renderSection(section, { remote, cell: (b) => `\`${b}\`` }),
+        ...renderSection(section, { cell: (b) => `\`${b}\`` }),
         "",
       ]),
     ].join("\n"),

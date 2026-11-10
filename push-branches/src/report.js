@@ -6,7 +6,13 @@ import {
   resolve,
 } from "./commits.js";
 import { describeSteps } from "./steps.js";
-import { commitLink, escapeMarkdown, repositoryUrl } from "./summary.js";
+import {
+  COMMERCIAL_REMOTE,
+  OSS_REMOTE,
+  commitLink,
+  escapeMarkdown,
+  repositoryUrl,
+} from "./summary.js";
 import { parseVersion, previousVersion } from "./versions.js";
 
 /** The commits that a list shows, then "and N more" with a link to the compare view. */
@@ -20,6 +26,8 @@ const isRelease = (branch) => branch.startsWith("release/");
  * - a hotfix is compared with the OSS version that it is based on (the tag 7.0.9 for 7.0.9.1).
  *   Until that release is public there is no such tag, and it is compared with the branch that
  *   it is based on (release/7.0.9, or embargoed/7.0.9-INTERNAL-SNAPSHOT for the snapshot)
+ * - a long-term support branch (commercial, with no OSS release) is compared with the release
+ *   before it (`previous`, see previousRelease), 5.8.29 for 5.8.30
  * - the other branches are compared with the branch of the OSS repository of their generation
  *   (7.0.x)
  * - if that cannot be done (OSS has no such branch, or could not be read), or if the run
@@ -37,21 +45,41 @@ export function compareWith({
   base,
   oss,
   basedOn,
+  previous,
 }) {
   const pushed = {
     gitRef: base,
     commandRef: base.slice(0, 10),
     oss: false,
   };
+  // the release that a hotfix fixes: 7.0.9 for 7.0.9.1
+  const fixed = oss.tag || /\d+\.\d+\.\d+/.exec(basedOn ?? "")?.[0];
+  const fixes = fixed ? `\`${fixed}\`` : "the release it fixes";
   const configured = Boolean(oss.url);
   const unreadable = oss.error ? `OSS could not be read: ${oss.error}` : "";
+
+  if (kind === "lts") {
+    if (previous) {
+      return {
+        gitRef: previous.gitRef,
+        commandRef: previous.commandRef,
+        heading: `**Commits not in the previous release \`${previous.version}\`**`,
+        oss: previous.oss,
+      };
+    }
+    return {
+      ...pushed,
+      heading:
+        "**Commits not in the previous release** (there is none, so these are the commits that the run made on the pushed commit)",
+    };
+  }
 
   if (kind === "active") {
     if (oss.tagRef) {
       return {
         gitRef: oss.tagRef,
         commandRef: oss.tag,
-        heading: `**Commits not in OSS \`${oss.tag}\`**`,
+        heading: `**Commits not in ${fixes}**`,
         oss: true,
       };
     }
@@ -61,8 +89,8 @@ export function compareWith({
     if (branchRef && resolve(directory, branchRef)) {
       return {
         gitRef: branchRef,
-        commandRef: `${remote}/${basedOn}`,
-        heading: `**Commits not in OSS**${
+        commandRef: `${COMMERCIAL_REMOTE}/${basedOn}`,
+        heading: `**Commits not in ${fixes}**${
           why
             ? ` (${why}, so compared with \`${basedOn}\`, the branch it is based on)`
             : ` (compared with \`${basedOn}\`, the branch it is based on)`
@@ -72,14 +100,14 @@ export function compareWith({
     }
     return {
       ...pushed,
-      heading: `**Commits not in OSS** (${why || "OSS is not known"}${basedOn ? `, and \`${basedOn}\` does not exist` : ""}, so these are the commits that the run made on the pushed commit)`,
+      heading: `**Commits not in ${fixes}** (${why || "OSS is not known"}${basedOn ? `, and \`${basedOn}\` does not exist` : ""}, so these are the commits that the run made on the pushed commit)`,
     };
   }
 
   if (oss.branchRef) {
     return {
       gitRef: oss.branchRef,
-      commandRef: `oss/${oss.branch}`,
+      commandRef: `${OSS_REMOTE}/${oss.branch}`,
       heading: `**Commits not in OSS \`${oss.branch}\`**`,
       oss: true,
     };
@@ -120,7 +148,7 @@ export function previousRelease({ directory, remote, version }) {
     } else if ((match = /^refs\/tags\/(.+)$/.exec(ref))) {
       note(match[1], ref, match[1], 1);
     } else if ((match = /^refs\/remotes\/[^/]+\/release\/(.+)$/.exec(ref))) {
-      note(match[1], ref, `${remote}/release/${match[1]}`, 2);
+      note(match[1], ref, `${COMMERCIAL_REMOTE}/release/${match[1]}`, 2);
     }
   }
   const previous = previousVersion(version, [...found.keys()]);
@@ -152,6 +180,12 @@ export function collectReport({
   const sorted = [...pushed].sort(
     (a, b) => Number(isRelease(a.branch)) - Number(isRelease(b.branch)),
   );
+  const releaseVersion = pushed.find(({ branch }) =>
+    isRelease(branch),
+  )?.version;
+  const previous = releaseVersion
+    ? previousRelease({ directory, remote, version: releaseVersion })
+    : undefined;
   const sections = sorted.map(({ branch, version }) => {
     const role = isRelease(branch) ? "release" : "snapshot";
     const basedOn = role === "release" ? releaseOf : snapshotOf;
@@ -163,6 +197,7 @@ export function collectReport({
       base,
       oss,
       basedOn,
+      previous,
     });
     const commits = commitsNotIn(directory, compare.gitRef, branch);
     const after = commitsMadeAfter(directory, base, branch);
@@ -177,7 +212,6 @@ export function collectReport({
       merged: role === "release" ? merged.release : merged.snapshot,
     };
     if (role === "release") {
-      const previous = previousRelease({ directory, remote, version });
       if (previous) {
         section.since = {
           ...previous,
@@ -199,7 +233,7 @@ export function collectReport({
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** The lines of the section of a branch: how it was created, its commits, and its commands. */
-export function renderSection(section, { remote, cell }) {
+export function renderSection(section, { cell }) {
   const repository = repositoryUrl();
   const lines = [
     `#### ${cell(section.branch)}`,
@@ -232,7 +266,7 @@ export function renderSection(section, { remote, cell }) {
   lines.push(
     "",
     "```shell",
-    `git log --oneline --no-merges --reverse ${section.compare.commandRef}..${remote}/${section.branch}`,
+    `git log --oneline --no-merges --reverse ${section.compare.commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
     "```",
   );
 
@@ -250,7 +284,7 @@ export function renderSection(section, { remote, cell }) {
       `${plural(commits, "commit")} since ${version}${merges > 0 ? ` (${all} with the ${plural(merges, "merge commit")})` : ""}${compare}`,
       "",
       "```shell",
-      `git log --oneline --no-merges ${commandRef}..${remote}/${section.branch}`,
+      `git log --oneline --no-merges ${commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
       "```",
     );
   }
@@ -262,21 +296,25 @@ export function renderSection(section, { remote, cell }) {
  * uses it, and the branches that were pushed.
  */
 export function setupCommands(report) {
-  const { sections, oss, remote } = report;
+  const { sections, oss } = report;
   const lines = [];
   const usesOss =
     sections.some(({ compare, since }) => compare.oss || since?.oss) && oss.url;
   if (usesOss) {
     const branch = sections.some(({ compare }) =>
-      compare.commandRef.startsWith("oss/"),
+      compare.commandRef.startsWith(`${OSS_REMOTE}/`),
     )
       ? ` ${oss.branch}`
       : "";
     lines.push(
-      `git remote add oss ${oss.url}`,
-      `git fetch oss${branch} --tags`,
+      `git remote add ${OSS_REMOTE} ${oss.url}`,
+      `git fetch ${OSS_REMOTE}${branch} --tags`,
     );
   }
-  lines.push(`git fetch ${remote}`);
+  const repository = repositoryUrl();
+  if (repository) {
+    lines.unshift(`git remote add ${COMMERCIAL_REMOTE} ${repository}.git`);
+  }
+  lines.push(`git fetch ${COMMERCIAL_REMOTE}`);
   return { lines, usesOss: Boolean(usesOss) };
 }
