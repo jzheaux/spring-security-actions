@@ -246,14 +246,14 @@ export function collectReport({
 }
 
 /**
- * The git log command of the summary. With `-s ours` merges in the range it leaves out what
- * they merged in, as the list does (it still prints the merges themselves).
+ * The git log command of the summary. With `-s ours` merges in the range, the commands that it
+ * is given leave out what they merged in, as the list does: the second parent of each.
  */
 function logCommand(flags, range, ours) {
   if (ours.length === 0) {
     return `git log ${flags} ${range}`;
   }
-  return `git log ${flags} $(for m in $(git rev-list --merges ${range}); do git diff --quiet $m^1 $m && echo "^$m^2"; done) ${range}`;
+  return `for m in $(git rev-list --merges ${range}); do git diff --quiet $m^1 $m && echo "^$m^2"; done | xargs git log ${flags} ${range}`;
 }
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -293,7 +293,7 @@ export function renderSection(section, { cell }) {
     "",
     "```shell",
     logCommand(
-      "--oneline --reverse",
+      "--oneline --no-merges --reverse",
       `${section.compare.commandRef}..${COMMERCIAL_REMOTE}/${section.branch}`,
       section.ours,
     ),

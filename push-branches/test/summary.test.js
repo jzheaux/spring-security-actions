@@ -100,7 +100,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "- `<internal-reactor>` Update reactor to 2025.0.9-INTERNAL-SNAPSHOT",
           "",
           "```shell",
-          "git log --oneline --reverse oss/7.0.x..commercial/embargoed/7.0.9-INTERNAL-SNAPSHOT",
+          "git log --oneline --no-merges --reverse oss/7.0.x..commercial/embargoed/7.0.9-INTERNAL-SNAPSHOT",
           "```",
           "",
           "#### `release/7.0.9`",
@@ -117,7 +117,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "- `<release-709>` Release 7.0.9",
           "",
           "```shell",
-          "git log --oneline --reverse oss/7.0.x..commercial/release/7.0.9",
+          "git log --oneline --no-merges --reverse oss/7.0.x..commercial/release/7.0.9",
           "```",
           "",
           "**All changes in this release**",
@@ -155,8 +155,8 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "",
           "| Branch | Version | Not in the release it fixes |",
           "| --- | --- | --- |",
-          "| `embargoed/7.0.9.1-SNAPSHOT` | 7.0.9.1-SNAPSHOT | 6 |",
-          "| `release/7.0.9.1` | 7.0.9.1 | 7 |",
+          "| `embargoed/7.0.9.1-SNAPSHOT` | 7.0.9.1-SNAPSHOT | 5 |",
+          "| `release/7.0.9.1` | 7.0.9.1 | 6 |",
           "",
           "The pushed commit is `<header>`. To run the commands below, in a clone of this repository, add the remote once and fetch the branches:",
           "",
@@ -178,13 +178,12 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "",
           "- `<cve>` Fix CVE-2026-1234 in the path matcher",
           "- `<header>` Reject a malformed header in the filter",
-          "- `<merge-snapshot>` Merge embargoed/7.0.9-INTERNAL-SNAPSHOT into embargoed/7.0.9.1-SNAPSHOT",
           "- `<snapshot-license>` Commercial changes for 7.0.9.1",
           "- `<snapshot-version>` Set the version to 7.0.9.1-SNAPSHOT",
           "- `<snapshot-core>` Update spring-core to 7.0.9.1-SNAPSHOT",
           "",
           "```shell",
-          "git log --oneline --reverse commercial/embargoed/7.0.9-INTERNAL-SNAPSHOT..commercial/embargoed/7.0.9.1-SNAPSHOT",
+          "git log --oneline --no-merges --reverse commercial/embargoed/7.0.9-INTERNAL-SNAPSHOT..commercial/embargoed/7.0.9.1-SNAPSHOT",
           "```",
           "",
           "#### `release/7.0.9.1`",
@@ -201,14 +200,13 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "",
           "- `<cve>` Fix CVE-2026-1234 in the path matcher",
           "- `<header>` Reject a malformed header in the filter",
-          "- `<merge-release>` Merge release/7.0.9 into release/7.0.9.1",
           "- `<release-license>` Commercial changes for 7.0.9.1",
           "- `<release-core>` Update spring-core to 7.0.9.1",
           "- `<release-netty>` Update netty to 4.2.2.1",
           "- `<release-7091>` Release 7.0.9.1",
           "",
           "```shell",
-          "git log --oneline --reverse commercial/release/7.0.9..commercial/release/7.0.9.1",
+          "git log --oneline --no-merges --reverse commercial/release/7.0.9..commercial/release/7.0.9.1",
           "```",
           "",
           "**All changes in this release**",
@@ -243,7 +241,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         "**Commits not in `7.0.9`** (omits commits merged with -s ours)",
       );
       expect(text).toContain(
-        "git log --oneline --reverse 7.0.9..commercial/release/7.0.9.1",
+        "git log --oneline --no-merges --reverse 7.0.9..commercial/release/7.0.9.1",
       );
       expect(text).toContain(
         "6 commits since 7.0.9 (7 with the 1 merge commit)",
@@ -278,7 +276,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         "**Commits not in `7.0.9`** (OSS 7.0.9 is not public yet, and `release/7.0.9` does not exist, so these are the commits that the run made on the pushed commit) (omits commits merged with -s ours)",
       );
       expect(text).toContain(
-        "git log --oneline --reverse <header>..commercial/release/7.0.9.1",
+        "git log --oneline --no-merges --reverse <header>..commercial/release/7.0.9.1",
       );
       // 4 commits made by the run on the pushed commit: license, two updates, release
       expect(text).toContain("| `release/7.0.9.1` | 7.0.9.1 | 4 |");
@@ -363,11 +361,11 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       );
       expect(text).not.toContain("Commits not in OSS");
       expect(text).toContain(
-        "git log --oneline --reverse 7.0.8..commercial/release/7.0.9",
+        "git log --oneline --no-merges --reverse 7.0.8..commercial/release/7.0.9",
       );
     });
 
-    it("lists a merge, but not one made with -s ours, nor what it merged in", async () => {
+    it("lists no merge, and not what an -s ours merge merged in", async () => {
       const world = createScenario();
       const built = buildFrozen(world);
       const { work } = world;
@@ -403,16 +401,16 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       );
       expect(result.code).toBe(0);
       expect(text).toContain("A real change");
-      expect(text).toContain("Merge side-real into release/7.0.9");
+      expect(text).not.toContain("Merge side-real");
       expect(text).not.toContain("Merge side-ours");
       expect(text).not.toContain("Only in the ours side");
-      expect(text).toContain("| `release/7.0.9` | 7.0.9 | 4 |");
+      expect(text).toContain("| `release/7.0.9` | 7.0.9 | 3 |");
       expect(text).toContain(
-        'git log --oneline --reverse $(for m in $(git rev-list --merges oss/7.0.x..commercial/release/7.0.9); do git diff --quiet $m^1 $m && echo "^$m^2"; done) oss/7.0.x..commercial/release/7.0.9',
+        'for m in $(git rev-list --merges oss/7.0.x..commercial/release/7.0.9); do git diff --quiet $m^1 $m && echo "^$m^2"; done | xargs git log --oneline --no-merges --reverse oss/7.0.x..commercial/release/7.0.9',
       );
       // no merge made with -s ours in the snapshot: the command is a plain one
       expect(text).toContain(
-        "git log --oneline --reverse oss/7.0.x..commercial/embargoed/7.0.9-INTERNAL-SNAPSHOT",
+        "git log --oneline --no-merges --reverse oss/7.0.x..commercial/embargoed/7.0.9-INTERNAL-SNAPSHOT",
       );
     });
 
@@ -449,7 +447,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         "**Commits on the pushed commit** (omits commits merged with -s ours)",
       );
       expect(text).toContain(
-        "git log --oneline --reverse <frozen>..commercial/release/7.0.9",
+        "git log --oneline --no-merges --reverse <frozen>..commercial/release/7.0.9",
       );
     });
 
@@ -483,7 +481,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       );
       // the command has no limit
       expect(text).toContain(
-        "git log --oneline --reverse oss/7.0.x..commercial/release/7.0.9",
+        "git log --oneline --no-merges --reverse oss/7.0.x..commercial/release/7.0.9",
       );
     });
 

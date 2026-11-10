@@ -41,20 +41,21 @@ const withoutMerged = (ours) => ours.map((merge) => `^${merge}^2`);
 
 /**
  * The commits of `to` that `from` does not have (git log from..to), the oldest first: the
- * ones that are shown, and that the commands of the summary list. Merge commits are in, except
- * the ones made with `-s ours` (`ours`, see oursMerges) and the commits that they merged in.
+ * ones that are shown, and that the commands of the summary list, without the merge commits,
+ * and without the commits that an `-s ours` merge merged in (`ours`, see oursMerges).
  */
 export function commitsNotIn(directory, from, to, ours = []) {
   return parse(
     git(
       directory,
       "log",
+      "--no-merges",
       "--reverse",
       `--format=${FORMAT}`,
       ...withoutMerged(ours),
       `${from}..${to}`,
     ),
-  ).filter(({ sha }) => !ours.includes(sha));
+  );
 }
 
 /**
