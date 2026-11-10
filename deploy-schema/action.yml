@@ -1,0 +1,22 @@
+name: "deploy-schema"
+description: "Deploy the project's XML schema files to the docs host"
+author: "jzheaux"
+
+inputs:
+  java-version:
+    description: "The Java version to use"
+    required: false
+    default: "17"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up JDK ${{ inputs.java-version }}
+      uses: spring-io/spring-gradle-build-action@c8668747d7c264864c8c7f7026d0d277d14a78dc  # v2.0.6
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: "temurin"
+    - name: Deploy Schema with Gradle
+      uses: $/run-gradle
+      with:
+        gradle-args: deploySchema --stacktrace --info
