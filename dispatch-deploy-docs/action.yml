@@ -1,0 +1,35 @@
+name: "dispatch-deploy-docs"
+description: "Dispatches the workflow that deploys the project's documentation"
+author: "jzheaux"
+
+inputs:
+  workflow:
+    description: "The file name of the workflow to dispatch"
+    required: false
+    default: "deploy-docs.yml"
+  ref:
+    description: "The branch or tag to run the workflow on"
+    required: false
+    default: "docs-build"
+  repository:
+    description: "The repository (owner/repo) that has the workflow"
+    required: false
+    default: ${{ github.repository }}
+  token:
+    description: "The token that dispatches the workflow; it needs the actions:write permission"
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Dispatch ${{ inputs.workflow }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        WORKFLOW: ${{ inputs.workflow }}
+        REF: ${{ inputs.ref }}
+      run: |
+        gh workflow run "$WORKFLOW" --ref "$REF"
+        echo "::notice title=Docs::Dispatched $WORKFLOW on $REF in $GH_REPO"
