@@ -27,6 +27,15 @@ name: post-publish
 # commercial repository, which is the OSS one with -commercial. The actions are the ones of this
 # repository, each in a directory of its own with a README. Nothing in this workflow is a script: what
 # it does is in the actions.
+#
+# Besides the job post-publish, which does all of the above, the workflow has the jobs that make
+# the release known, and that do not depend on it:
+#
+#   deploy-docs            dispatches the workflow deploy-docs.yml of the project on docs-build
+#   publish-release-notes  the changelog of the milestone of the tag, as the GitHub release
+#   update-learn-page      adds the release to the #learn page: an OSS release through the Spring
+#                          Projects API, and any other (lts, hotfix, internal) by editing
+#                          documentation.json in spring-website-commercial-content
 
 on:
   workflow_call:
@@ -54,6 +63,12 @@ on:
       RELEASE_AUTOMATION_TOKEN:
         description: "The token that checks out and pushes the commercial repository, pushes the OSS repository, and reads and writes the issues and the labels of both (Contents: Read and write, Issues: Read and write, on both repositories)"
         required: true
+      GH_WEBSITE_COMMERCIAL_CONTENT_TOKEN:
+        description: "The token that edits documentation.json in spring-website-commercial-content. A commercial release needs it (the action fails without it); an OSS release has none, and updates the Spring Projects API instead"
+        required: false
+      GH_ACTIONS_REPO_TOKEN:
+        description: "The token that authenticates the update of the Spring Projects API, which is what an OSS release uses for the #learn page"
+        required: false
 
 permissions:
   contents: read
@@ -173,3 +188,40 @@ jobs:
           branches: ${{ steps.plan.outputs.delete-branches }}
           dry-run: ${{ inputs.dry-run }}
           token: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+
+  deploy-docs:
+    name: Deploy Docs
+    runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch Deploy Docs
+        uses: spring-io/spring-security-actions/dispatch-deploy-docs@311017924b03bd84c6eeae399df43f5f739963eb # 0.0.26
+
+  publish-release-notes:
+    name: Publish Release Notes
+    runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Publish Release Notes
+        uses: spring-io/spring-security-actions/publish-release-notes@311017924b03bd84c6eeae399df43f5f739963eb # 0.0.26
+        with:
+          tag: ${{ inputs.tag }}
+
+  update-learn-page:
+    name: Update Learn Page
+    runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
+    steps:
+      - name: Update Learn Page
+        uses: spring-io/spring-release-actions/update-learn-page@967a8de4659c4273a82bcb098d73c2330c015254 # 0.0.9
+        with:
+          token: ${{ secrets.GH_ACTIONS_REPO_TOKEN }}
+          version: ${{ inputs.tag }}
+          website-token: ${{ secrets.GH_WEBSITE_COMMERCIAL_CONTENT_TOKEN }}
