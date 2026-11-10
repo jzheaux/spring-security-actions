@@ -47,6 +47,14 @@ export function repositoryUrl() {
   return `${server}/${repository}`;
 }
 
+/**
+ * The names that the commands of the summary give to the remotes of a clone: the commercial
+ * repository (this one) and OSS, whatever the clone calls them (origin), so that the commands
+ * are the same for everybody.
+ */
+export const COMMERCIAL_REMOTE = "commercial";
+export const OSS_REMOTE = "oss";
+
 /** A sha as a short code, linked to its commit when the repository is known. */
 export function commitLink(sha) {
   const short = `\`${sha.slice(0, 7)}\``;

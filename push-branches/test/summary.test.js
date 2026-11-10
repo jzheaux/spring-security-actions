@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { git } from "./support/git-repo.js";
+import { compareWith } from "../src/report.js";
 import { runAction } from "./support/run-action.js";
 import {
   buildFrozen,
@@ -77,12 +78,12 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "| `embargoed/7.0.9-INTERNAL-SNAPSHOT` | 7.0.9-INTERNAL-SNAPSHOT | 2 |",
           "| `release/7.0.9` | 7.0.9 | 2 |",
           "",
-          "The pushed commit is `<frozen>`. To run the commands below, in a clone of this repository, add OSS once and fetch the branches:",
+          "The pushed commit is `<frozen>`. To run the commands below, in a clone of this repository, add the remotes once and fetch the branches:",
           "",
           "```shell",
           "git remote add oss <oss>",
           "git fetch oss 7.0.x --tags",
-          "git fetch origin",
+          "git fetch commercial",
           "```",
           "",
           "#### `embargoed/7.0.9-INTERNAL-SNAPSHOT`",
@@ -99,7 +100,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "- `<internal-reactor>` Update reactor to 2025.0.9-INTERNAL-SNAPSHOT",
           "",
           "```shell",
-          "git log --oneline --no-merges --reverse oss/7.0.x..origin/embargoed/7.0.9-INTERNAL-SNAPSHOT",
+          "git log --oneline --no-merges --reverse oss/7.0.x..commercial/embargoed/7.0.9-INTERNAL-SNAPSHOT",
           "```",
           "",
           "#### `release/7.0.9`",
@@ -116,7 +117,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "- `<release-709>` Release 7.0.9",
           "",
           "```shell",
-          "git log --oneline --no-merges --reverse oss/7.0.x..origin/release/7.0.9",
+          "git log --oneline --no-merges --reverse oss/7.0.x..commercial/release/7.0.9",
           "```",
           "",
           "**All changes in this release**",
@@ -124,7 +125,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "3 commits since 7.0.8",
           "",
           "```shell",
-          "git log --oneline --no-merges 7.0.8..origin/release/7.0.9",
+          "git log --oneline --no-merges 7.0.8..commercial/release/7.0.9",
           "```",
           "",
           "",
@@ -152,15 +153,15 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "",
           "Release train 2026.11.19",
           "",
-          "| Branch | Version | Not in OSS |",
+          "| Branch | Version | Not in the release it fixes |",
           "| --- | --- | --- |",
           "| `embargoed/7.0.9.1-SNAPSHOT` | 7.0.9.1-SNAPSHOT | 5 |",
           "| `release/7.0.9.1` | 7.0.9.1 | 6 |",
           "",
-          "The pushed commit is `<header>`. To run the commands below, in a clone of this repository, fetch the branches:",
+          "The pushed commit is `<header>`. To run the commands below, in a clone of this repository, add the remote once and fetch the branches:",
           "",
           "```shell",
-          "git fetch origin",
+          "git fetch commercial",
           "```",
           "",
           "#### `embargoed/7.0.9.1-SNAPSHOT`",
@@ -173,7 +174,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "4. Set the version to `7.0.9.1-SNAPSHOT` (`<snapshot-version>`).",
           "5. Updated 1 dependency to snapshots from train 2026.11.19, with no issue: `<snapshot-core>` (spring-core 7.0.9.1-SNAPSHOT).",
           "",
-          "**Commits not in OSS** (OSS 7.0.9 is not public yet, so compared with `embargoed/7.0.9-INTERNAL-SNAPSHOT`, the branch it is based on)",
+          "**Commits not in `7.0.9`** (OSS 7.0.9 is not public yet, so compared with `embargoed/7.0.9-INTERNAL-SNAPSHOT`, the branch it is based on)",
           "",
           "- `<cve>` Fix CVE-2026-1234 in the path matcher",
           "- `<header>` Reject a malformed header in the filter",
@@ -182,7 +183,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "- `<snapshot-core>` Update spring-core to 7.0.9.1-SNAPSHOT",
           "",
           "```shell",
-          "git log --oneline --no-merges --reverse origin/embargoed/7.0.9-INTERNAL-SNAPSHOT..origin/embargoed/7.0.9.1-SNAPSHOT",
+          "git log --oneline --no-merges --reverse commercial/embargoed/7.0.9-INTERNAL-SNAPSHOT..commercial/embargoed/7.0.9.1-SNAPSHOT",
           "```",
           "",
           "#### `release/7.0.9.1`",
@@ -195,7 +196,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "4. Updated 2 dependencies from train 2026.11.19, each with its issue: `<release-core>` (spring-core 7.0.9.1, Closes gh-1234), `<release-netty>` (netty 4.2.2.1, Closes gh-1235).",
           "5. Set the version to `7.0.9.1` (`<release-7091>`).",
           "",
-          "**Commits not in OSS** (OSS 7.0.9 is not public yet, so compared with `release/7.0.9`, the branch it is based on)",
+          "**Commits not in `7.0.9`** (OSS 7.0.9 is not public yet, so compared with `release/7.0.9`, the branch it is based on)",
           "",
           "- `<cve>` Fix CVE-2026-1234 in the path matcher",
           "- `<header>` Reject a malformed header in the filter",
@@ -205,7 +206,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "- `<release-7091>` Release 7.0.9.1",
           "",
           "```shell",
-          "git log --oneline --no-merges --reverse origin/release/7.0.9..origin/release/7.0.9.1",
+          "git log --oneline --no-merges --reverse commercial/release/7.0.9..commercial/release/7.0.9.1",
           "```",
           "",
           "**All changes in this release**",
@@ -213,7 +214,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
           "6 commits since 7.0.9 (7 with the 1 merge commit)",
           "",
           "```shell",
-          "git log --oneline --no-merges origin/release/7.0.9..origin/release/7.0.9.1",
+          "git log --oneline --no-merges commercial/release/7.0.9..commercial/release/7.0.9.1",
           "```",
           "",
           "",
@@ -236,15 +237,15 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         HOTFIX_REF,
       );
       expect(result.code).toBe(0);
-      expect(text).toContain("**Commits not in OSS `7.0.9`**");
+      expect(text).toContain("**Commits not in `7.0.9`**");
       expect(text).toContain(
-        "git log --oneline --no-merges --reverse 7.0.9..origin/release/7.0.9.1",
+        "git log --oneline --no-merges --reverse 7.0.9..commercial/release/7.0.9.1",
       );
       expect(text).toContain(
         "6 commits since 7.0.9 (7 with the 1 merge commit)",
       );
       expect(text).toContain(
-        "git log --oneline --no-merges 7.0.9..origin/release/7.0.9.1",
+        "git log --oneline --no-merges 7.0.9..commercial/release/7.0.9.1",
       );
       expect(text).toContain("git remote add oss <oss>\ngit fetch oss --tags");
     });
@@ -270,10 +271,10 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
         "2. Skipped the merge: `release/7.0.9` does not exist, so the hotfix release is built from the active embargoed branch alone.",
       );
       expect(text).toContain(
-        "**Commits not in OSS** (OSS 7.0.9 is not public yet, and `release/7.0.9` does not exist, so these are the commits that the run made on the pushed commit)",
+        "**Commits not in `7.0.9`** (OSS 7.0.9 is not public yet, and `release/7.0.9` does not exist, so these are the commits that the run made on the pushed commit)",
       );
       expect(text).toContain(
-        "git log --oneline --no-merges --reverse <header>..origin/release/7.0.9.1",
+        "git log --oneline --no-merges --reverse <header>..commercial/release/7.0.9.1",
       );
       // 4 commits made by the run on the pushed commit: license, two updates, release
       expect(text).toContain("| `release/7.0.9.1` | 7.0.9.1 | 4 |");
@@ -338,6 +339,26 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       expect(git(world.work, "rev-parse", "7.0.8")).toBe(world.frozen);
     });
 
+    it("compares a long-term support release with the release before it, not with OSS", async () => {
+      const world = createScenario();
+      const built = buildFrozen(world);
+      const { result, text } = await summarize(
+        entry,
+        world,
+        { ...frozenInputs(world, built), kind: "lts" },
+        REF,
+      );
+      expect(result.code).toBe(0);
+      expect(text).toContain(
+        "| Branch | Version | Not in the previous release |",
+      );
+      expect(text).toContain("**Commits not in the previous release `7.0.8`**");
+      expect(text).not.toContain("Commits not in OSS");
+      expect(text).toContain(
+        "git log --oneline --no-merges --reverse 7.0.8..commercial/release/7.0.9",
+      );
+    });
+
     it("says it when OSS has no branch for the generation", async () => {
       const world = createScenario();
       const built = buildFrozen(world);
@@ -369,7 +390,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       expect(result.code).toBe(0);
       expect(text).toContain("**Commits on the pushed commit**");
       expect(text).toContain(
-        "git log --oneline --no-merges --reverse <frozen>..origin/release/7.0.9",
+        "git log --oneline --no-merges --reverse <frozen>..commercial/release/7.0.9",
       );
     });
 
@@ -403,7 +424,7 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
       );
       // the command has no limit
       expect(text).toContain(
-        "git log --oneline --no-merges --reverse oss/7.0.x..origin/release/7.0.9",
+        "git log --oneline --no-merges --reverse oss/7.0.x..commercial/release/7.0.9",
       );
     });
 
@@ -468,3 +489,38 @@ describe.each([["src/index.js"], ["dist/index.js"]])(
     });
   },
 );
+
+describe("compareWith for a long-term support branch", () => {
+  const args = {
+    directory: ".",
+    role: "release",
+    kind: "lts",
+    remote: "origin",
+    base: "0123456789abcdef",
+    oss: {},
+  };
+
+  it("says the release before it", () => {
+    const result = compareWith({
+      ...args,
+      previous: {
+        version: "5.8.29",
+        gitRef: "refs/tags/5.8.29",
+        commandRef: "5.8.29",
+        oss: false,
+      },
+    });
+    expect(result.heading).toBe(
+      "**Commits not in the previous release `5.8.29`**",
+    );
+    expect(result.commandRef).toBe("5.8.29");
+  });
+
+  it("falls back to the pushed commit when there is no release before it", () => {
+    const result = compareWith(args);
+    expect(result.gitRef).toBe("0123456789abcdef");
+    expect(result.heading).toContain(
+      "(there is none, so these are the commits that the run made",
+    );
+  });
+});

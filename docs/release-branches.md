@@ -83,13 +83,14 @@ The workflow reads the branch of the date, so the due date of the milestone of a
 
 ## The summary of the run
 
-The summary of the run (the page of the run on GitHub) says what the push created and how, so that nobody has to read the history of the branches to see what a hotfix has. It begins with the two branches that the push creates and uses for releasing: the snapshot, and the release, which are pushed together. Under it is the release train, and a table of the branches with the number of commits that OSS lacks. Then each branch has a section, the snapshot first, as it is built first:
+The summary of the run (the page of the run on GitHub) says what the push created and how, so that nobody has to read the history of the branches to see what a hotfix has. It begins with the two branches that the push creates and uses for releasing: the snapshot, and the release, which are pushed together. Under it is the release train, and a table of the branches with the number of commits that what they are compared with lacks (OSS, the previous release, or the release a hotfix fixes). Then each branch has a section, the snapshot first, as it is built first:
 
 - **How it was created**: the steps that the run made, in order, each with its commit: it was started at the pushed commit, the merge of the branch that a hotfix is based on (or that it was skipped, because that branch does not exist), the commercial license, the version, and the dependency updates with their issues.
-- **Commits not in OSS**: the commits of the branch that OSS does not have, the oldest first, each with its subject and a link to its commit. Merge commits are not listed. A list has 50 at most, then `and N more` with a link to the compare view. Under the list is the `git log` command that prints it, in a clone of the repository, with no limit. What a branch is compared with:
-  - a **hotfix**: the OSS version that it is based on (the tag `7.0.9` for `7.0.9.1`). That release is not public yet while it is embargoed, so there is no such tag: the hotfix is compared with the branch that it is based on, `release/7.0.9` for the release and `embargoed/7.0.9-INTERNAL-SNAPSHOT` for the snapshot, and the heading says so.
-  - **a frozen or a long-term support** branch: the branch of OSS of its generation (`7.0.x`).
-  - if OSS cannot be read, or has no such branch, with the pushed commit: the commits that the run made. The heading says why, and a warning says that OSS could not be read (the run goes on).
+- **Commits not in OSS** (the heading depends on the kind, see below): the commits of the branch that what it is compared with does not have, the oldest first, each with its subject and a link to its commit. Merge commits are not listed. A list has 50 at most, then `and N more` with a link to the compare view. Under the list is the `git log` command that prints it, in a clone of the repository, with no limit. What a branch is compared with:
+  - a **hotfix** (heading **Commits not in `7.0.9`**): the OSS version that it is based on (the tag `7.0.9` for `7.0.9.1`). That release is not public yet while it is embargoed, so there is no such tag: the hotfix is compared with the branch that it is based on, `release/7.0.9` for the release and `embargoed/7.0.9-INTERNAL-SNAPSHOT` for the snapshot, and the heading says so.
+  - a **frozen** branch (heading **Commits not in OSS**): the branch of OSS of its generation (`7.0.x`).
+  - a **long-term support** branch (heading **Commits not in the previous release**): the release before it (`5.8.29` for `5.8.30`, found as for "All changes in this release"), since it is commercial and has no OSS release. With no release before it, the pushed commit.
+  - if OSS cannot be read, or has no such branch (frozen), with the pushed commit: the commits that the run made. The heading says why, and a warning says that OSS could not be read (the run goes on).
 - **All changes in this release** (the release branch only): the number of commits since the release before it (the greatest version below it: `7.0.8` for `7.0.9`, `7.0.9` for `7.0.9.1`, from the tags of OSS and the release branches), a link to the compare view, and the `git log --no-merges` command that lists them.
 
 Under the table are the commands that get a clone ready for these: OSS as a remote, and a fetch of the branches that were pushed. For `embargoed/frozen/7.0.x` it reads, for example:
@@ -105,11 +106,11 @@ release/7.0.9: How it was created
 Commits not in OSS 7.0.x
 - 95be8d4 Update reactor to 2025.0.9
 - 50d0b06 Release 7.0.9
-    git log --oneline --no-merges --reverse oss/7.0.x..origin/release/7.0.9
+    git log --oneline --no-merges --reverse oss/7.0.x..commercial/release/7.0.9
 
 All changes in this release
 44 commits since 7.0.8 (60 with the 16 merge commits)
-    git log --oneline --no-merges 7.0.8..origin/release/7.0.9
+    git log --oneline --no-merges 7.0.8..commercial/release/7.0.9
 ```
 
 It is made by `push-branches`, see its README: the steps are read from the commits that the run made on the pushed commit, by the subjects that the actions give them.
